@@ -18,6 +18,10 @@ Bots run on the coding agent you choose:
 
 Each harness plugs in through one small adapter. Everything else stays the same.
 
+## Built in Rust
+
+We build as much as possible in Rust, for speed, low memory use, and one small binary to self-host. Web code is used only where the browser requires it.
+
 ## Features (planned)
 
 - **Bots**: named teammates, each with its own job, chat, and memory.

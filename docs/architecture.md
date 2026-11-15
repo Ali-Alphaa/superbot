@@ -34,11 +34,11 @@ Everything else is shared and never knows which harness is running.
 - **Adapters**: one per harness.
 - **Computer**: a Docker container on the VPS with a Linux desktop, browser, and terminal. Each Bot gets its own screen.
 
-Language: TypeScript, one repo.
+Language: Rust first, one Cargo workspace. Server, adapters, computer daemon, and CLI are Rust. The web UI uses as little JS as possible (Rust to WASM if it works well). Why: fast, low memory on a shared VPS (RAM is the bottleneck, see `background/grok-bot-computer-specs.md`), and one binary to deploy.
 
 ## Open decisions
 
-1. Stack: TypeScript monorepo?
+1. Web UI: Rust to WASM (e.g. Leptos, Dioxus), or a thin JS frontend? The rest is Rust.
 2. One shared computer for all Bots, or one per Bot?
 3. v1 chat channel: web, Slack, Telegram, or desktop?
 4. Single user, or teams with logins?
