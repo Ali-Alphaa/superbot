@@ -41,6 +41,8 @@ Settings are in [.env.example](../.env.example). Keep `botctl` next to `botd`: t
 
 ## Deploying on a Linux VPS
 
+- Keep your server IP, domain, and secrets out of this repo. They go in `.env` on the server.
+
 - Install the harness CLIs you want and log them in **as the user that runs `botd`**: `claude` (then `claude login` or `ANTHROPIC_API_KEY`), `codex` (`codex login` or `OPENAI_API_KEY`), `pi` (provider API key, e.g. `OPENROUTER_API_KEY`). Their env vars pass through to the Bots.
 - Run `botd` as a normal user, not root. Claude Code refuses to skip permissions as root.
 - Run it under systemd with `Restart=always`. It shuts down cleanly on SIGTERM.

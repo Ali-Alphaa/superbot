@@ -8,5 +8,6 @@ Open-source, self-hosted alternative to Grok Bot: AI teammates with their own co
 - Stay harness agnostic. Harness-specific code lives only in its adapter.
 - "Open Grok Bot" is a temporary name ("Grok" is xAI's trademark). We rename before launch, so keep the name out of code, packages, Docker images, and domains. Use neutral identifiers.
 - This repo is public. Put private notes in `private/` (gitignored).
+- Never commit private details: server IPs, hostnames, domains, local paths (`/Users/...`), emails, usernames, tokens, or keys. Use placeholders like `<server-ip>` and `.env` (gitignored).
 - Record big decisions in `docs/adr/`.
 - Skills live in `.agents/skills/`. `.claude/skills` is a symlink to it.
