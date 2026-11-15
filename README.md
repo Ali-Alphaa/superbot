@@ -26,6 +26,11 @@ Each harness plugs in through one small adapter. Everything else stays the same.
 - **Approvals**: Bots pause and ask before risky actions.
 - **Chat**: talk to Bots from a web app and from Slack.
 
+## Docs
+
+- [Grok Bot reference](docs/grok-bot-reference.md): what we are rebuilding.
+- [Architecture](docs/architecture.md): the plan and open decisions.
+
 ## Status
 
 Early. Nothing works yet.
