@@ -1,49 +1,49 @@
 // Thin client: all state lives on the server. Live updates come over /api/events.
 
-// A closed shape from a radius function r(angle), centered in the 48x48 avatar box.
-function polar(r, turn = 0) {
-  const pts = [];
-  for (let i = 0; i < 120; i++) {
-    const a = (i / 120) * Math.PI * 2;
-    const d = r(a);
-    pts.push(`${(24 + d * Math.cos(a + turn)).toFixed(2)} ${(24 + d * Math.sin(a + turn)).toFixed(2)}`);
-  }
-  return `M${pts.join("L")}Z`;
-}
-// A regular polygon with rounded corners (k = how round).
-const poly = (n, R, k = 0.22) => (a) => {
-  const seg = (2 * Math.PI) / n;
-  const flat = (R * Math.cos(Math.PI / n)) / Math.cos(((a % seg) + seg) % seg - Math.PI / n);
-  return flat * (1 - k) + R * 0.86 * k;
+// Bot avatars: soft "Squish" robots. One body color, plus a dark visor with two eyes.
+// Each shape is (color, face) => SVG. face is the visor function, or none() for the bare silhouette.
+const DARK = "#141414";
+const rect = (x, y, w, h, rx, f) => `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${rx}" fill="${f}"/>`;
+const circ = (cx, cy, r, f) => `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${f}"/>`;
+const ell = (cx, cy, rx, ry, f, rot = 0) => `<ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}" fill="${f}" transform="rotate(${rot} ${cx} ${cy})"/>`;
+const path = (d, f, round = 0) => `<path d="${d}" fill="${f}"${round ? ` stroke="${f}" stroke-width="${round}" stroke-linejoin="round"` : ""}/>`;
+const tilt = (deg, s) => `<g transform="rotate(${deg} 24 24)">${s}</g>`;
+const nub = (x, y, h, f) => rect(x - 1.3, y - h, 2.6, h + 2, 1.3, f) + circ(x, y - h, 3, f);
+const visor = (k) => (x, y, w, h) => {
+  const s = h / 12, g = w * 0.22, eye = (ex) => rect(ex - 1.5 * s, y - 2.9 * s, 3 * s, 5.8 * s, 1.5 * s, k);
+  return rect(x - w / 2, y - h / 2, w, h, h / 2, DARK) + eye(x - g) + eye(x + g);
 };
-const squircle = (a) => 16.5 * Math.pow(Math.pow(Math.abs(Math.cos(a)), 5) + Math.pow(Math.abs(Math.sin(a)), 5), -1 / 5);
+const none = () => "";
+const GEAR = Array.from({ length: 97 }, (_, i) => {
+  const a = (i / 96) * Math.PI * 2, r = 18.5 + 2.6 * Math.cos(8 * a);
+  return `${i ? "L" : "M"}${(24 + r * Math.sin(a)).toFixed(2)} ${(24 - r * Math.cos(a)).toFixed(2)}`;
+}).join("") + "Z";
 
 // Order matters: the New Bot window shows them in this order.
 const SHAPES = {
-  round: "M24 5c11.5 0 19 7.5 19 18.5S35 43 23.5 43 5 35.5 5 24.5 12.5 5 24 5z",
-  cloud: "M13 14c2-5 7-8 12-7 4 .7 6 3 7 5 6-.5 11 3 11 9 0 7-5 11-12 11-2 4-7 6-12 5-6-1-9-5-9-9-4-1-6-4-5-8 1-4 4-6 8-6z",
-  square: polar(squircle, -0.26),
-  star: "M24 3c2.6 9.4 6.6 14.2 21 21-14.4 6.8-18.4 11.6-21 21-2.6-9.4-6.6-14.2-21-21C17.4 17.2 21.4 12.4 24 3z",
-  flower: polar((a) => 16 + 3.6 * Math.cos(5 * a), -0.3),
-  blob: polar((a) => 17 + 2.6 * Math.cos(2 * a + 0.6) + 1.4 * Math.cos(3 * a)),
-  scallop: polar((a) => 17 + 1.8 * Math.cos(8 * a)),
-  egg: polar((a) => 16.5 + 3 * Math.cos(a + 2.3)),
-  wide: "M4 23c0-8.5 9-13.5 20-13.5S44 14.5 44 23s-9 15-20 15S4 31.5 4 23z",
-  triangle: polar(poly(3, 22, 0.3), 0.15),
-  pentagon: polar(poly(5, 19.5), -0.3),
-  splat: polar((a) => 15.5 + 3.4 * Math.cos(7 * a) + 1.2 * Math.cos(2 * a)),
-  hexagon: polar(poly(6, 19), 0.3),
+  waddle: (k, f) => nub(24, 9, 3, k) + ell(16.5, 41, 5.5, 3, k) + ell(31.5, 41, 5.5, 3, k) + circ(24, 24, 16.5, k) + f(24, 24, 23, 12),
+  drop: (k, f) => path("M24 6c9 0 15 12 17 22 2 10-6 15-17 15S5 38 7 28C9 18 15 6 24 6z", k) + f(24, 27, 22, 12),
+  cloud: (k, f) => nub(26, 12, 6, k) + circ(15, 27, 10, k) + circ(26, 22, 12, k) + circ(35, 29, 9, k) + rect(5, 27, 38, 15, 7.5, k) + f(24, 30, 22, 11),
+  bean: (k, f) => nub(20, 9, 5, k) + ell(24, 26, 20, 14, k, -12) + f(24, 26, 23, 12),
+  onigiri: (k, f) => path("M24 9L41 38H7Z", k, 12) + f(24, 30, 20, 11),
+  peanut: (k, f) => nub(24, 11, 4, k) + circ(15, 26, 12, k) + circ(33, 26, 12, k) + rect(15, 17, 18, 18, 0, k) + f(24, 25, 26, 12),
+  pebble: (k, f) => path("M9 16C13 8 30 4 38 11s7 22-3 29-26 5-29-7c-1-6 1-13 3-17z", k) + f(25, 25, 23, 12),
+  square: (k, f) => tilt(12, nub(24, 9, 4, k) + rect(8, 9, 32, 32, 12, k) + f(24, 25, 22, 12)),
+  jelly: (k, f) => tilt(18, ell(24, 25, 13.5, 19, k) + f(24, 22, 19, 11)),
+  gem: (k, f) => path("M24 7L40.5 18.5L34.5 40H13.5L7.5 18.5Z", k, 9) + f(24, 26, 22, 12),
+  gear: (k, f) => path(GEAR, k) + f(24, 24, 24, 12),
+  heart: (k, f) => path("M24 42L7 25A9.5 9.5 0 0 1 24 13A9.5 9.5 0 0 1 41 25Z", k, 6) + f(24, 25, 22, 11),
 };
+// Shapes from before the robots, so existing Bots keep a similar look.
+const OLD_SHAPES = { round: "waddle", star: "gear", flower: "gear", scallop: "gear", splat: "gear", blob: "pebble", egg: "drop", wide: "bean", triangle: "onigiri", pentagon: "gem", hexagon: "gem" };
 
 // ring: draw a selection outline that follows the shape.
-function avatar(color, shape = "round", size = 48, ring = false) {
-  const d = SHAPES[shape] ?? SHAPES.round;
-  const body = `<path d="${d}" fill="${color}"/>
-    <rect x="25" y="16" width="3.2" height="7" rx="1.6" fill="#141414" transform="rotate(-18 26.6 19.5)"/>
-    <rect x="32" y="15" width="3.2" height="7" rx="1.6" fill="#141414" transform="rotate(-18 33.6 18.5)"/>`;
+function avatar(color, shape = "waddle", size = 48, ring = false) {
+  const draw = SHAPES[shape] ?? SHAPES[OLD_SHAPES[shape]] ?? SHAPES.waddle;
+  const scaled = (k, s) => `<g transform="translate(24 24) scale(${k}) translate(-24 -24)">${s}</g>`;
+  const body = draw(color, visor(color));
   return `<svg class="avatar" viewBox="0 0 48 48" width="${size}" height="${size}" style="stroke:none;width:${size}px;height:${size}px;overflow:visible">
-    ${ring ? `<path d="${d}" fill="none" stroke="#4a4a4a" stroke-width="2.2" transform="translate(24 24) scale(1.12) translate(-24 -24)"/>
-      <g transform="translate(24 24) scale(.86) translate(-24 -24)">${body}</g>` : body}
+    ${ring ? scaled(1.1, draw("#4a4a4a", none)) + scaled(1.02, draw("#1f1f1f", none)) + scaled(.86, body) : body}
   </svg>`;
 }
 
@@ -356,7 +356,7 @@ $("composer").addEventListener("submit", (e) => {
 // New Bot window
 const COLORS = ["#f5f5f5", "#9a6b3f", "#e5484d", "#e8702e", "#e9a23b", "#4cc06a", "#4fb5a5", "#3b82f6", "#8b5cf6", "#e64a9c", "#7a7a7a"];
 const HARNESS_NAMES = { claude: "Claude Code", codex: "Codex", pi: "Pi" };
-const nb = { color: COLORS[0], shape: "round", harness: "claude" };
+const nb = { color: COLORS[0], shape: "waddle", harness: "claude" };
 const pickOne = (a) => a[Math.floor(Math.random() * a.length)];
 
 function renderNewBot() {

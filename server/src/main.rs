@@ -29,7 +29,7 @@ static PASSWORD: OnceLock<String> = OnceLock::new();
 static WEB_DIR: OnceLock<Option<PathBuf>> = OnceLock::new();
 
 const COLORS: [&str; 11] = ["#f5f5f5", "#9a6b3f", "#e5484d", "#e8702e", "#e9a23b", "#4cc06a", "#4fb5a5", "#3b82f6", "#8b5cf6", "#e64a9c", "#7a7a7a"];
-const SHAPES: [&str; 13] = ["round", "cloud", "square", "star", "flower", "blob", "scallop", "egg", "wide", "triangle", "pentagon", "splat", "hexagon"];
+const SHAPES: [&str; 12] = ["waddle", "drop", "cloud", "bean", "onigiri", "peanut", "pebble", "square", "jelly", "gem", "gear", "heart"];
 
 fn env(key: &str, default: &str) -> String {
     std::env::var(key).ok().filter(|v| !v.is_empty()).unwrap_or_else(|| default.into())
@@ -89,7 +89,7 @@ async fn main() {
     // First start: create the primary Bot.
     if app.db.bots().is_empty() {
         let name = env("PRIMARY_BOT_NAME", "Assistant");
-        let bot = app.db.create_bot(&name, "#f5f5f5", "round", &app.cfg.default_harness, None, true);
+        let bot = app.db.create_bot(&name, "#f5f5f5", "waddle", &app.cfg.default_harness, None, true);
         app.init_bot_files(&bot);
     }
 

@@ -89,7 +89,7 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
   display: grid; place-items: center; font-weight: 600; color: #ddd;
 }
 
-/* Bot avatar: a soft blob with two eyes */
+/* Bot avatar: a soft "Squish" robot with a visor */
 .avatar { display: block; flex-shrink: 0; }
 
 /* Chat */
