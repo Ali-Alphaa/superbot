@@ -43,3 +43,4 @@ Language: TypeScript, one repo.
 3. v1 chat channel: web, Slack, Telegram, or desktop?
 4. Single user, or teams with logins?
 5. First end-to-end demo job?
+6. Final project name. "Open Grok Bot" is temporary because "Grok" is xAI's trademark. Rename before launch.

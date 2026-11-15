@@ -2,7 +2,7 @@
 
 What we are rebuilding, in our own words. Grok Bot is xAI's "AI teammates" product: beta on Aug 11 2026, v1.0 on Nov 2 2026.
 
-We copy the ideas, never xAI's code, assets, or branding.
+We copy the ideas, never xAI's code, assets, or branding. Our project name is temporary for the same reason: we rename before launch.
 
 ## Core ideas
 
