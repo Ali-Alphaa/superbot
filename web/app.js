@@ -1,17 +1,49 @@
 // Thin client: all state lives on the server. Live updates come over /api/events.
 
+// A closed shape from a radius function r(angle), centered in the 48x48 avatar box.
+function polar(r, turn = 0) {
+  const pts = [];
+  for (let i = 0; i < 120; i++) {
+    const a = (i / 120) * Math.PI * 2;
+    const d = r(a);
+    pts.push(`${(24 + d * Math.cos(a + turn)).toFixed(2)} ${(24 + d * Math.sin(a + turn)).toFixed(2)}`);
+  }
+  return `M${pts.join("L")}Z`;
+}
+// A regular polygon with rounded corners (k = how round).
+const poly = (n, R, k = 0.22) => (a) => {
+  const seg = (2 * Math.PI) / n;
+  const flat = (R * Math.cos(Math.PI / n)) / Math.cos(((a % seg) + seg) % seg - Math.PI / n);
+  return flat * (1 - k) + R * 0.86 * k;
+};
+const squircle = (a) => 16.5 * Math.pow(Math.pow(Math.abs(Math.cos(a)), 5) + Math.pow(Math.abs(Math.sin(a)), 5), -1 / 5);
+
+// Order matters: the New Bot window shows them in this order.
 const SHAPES = {
   round: "M24 5c11.5 0 19 7.5 19 18.5S35 43 23.5 43 5 35.5 5 24.5 12.5 5 24 5z",
-  wide: "M4 23c0-8.5 9-13.5 20-13.5S44 14.5 44 23s-9 15-20 15S4 31.5 4 23z",
-  star: "M24 3c2.6 9.4 6.6 14.2 21 21-14.4 6.8-18.4 11.6-21 21-2.6-9.4-6.6-14.2-21-21C17.4 17.2 21.4 12.4 24 3z",
   cloud: "M13 14c2-5 7-8 12-7 4 .7 6 3 7 5 6-.5 11 3 11 9 0 7-5 11-12 11-2 4-7 6-12 5-6-1-9-5-9-9-4-1-6-4-5-8 1-4 4-6 8-6z",
+  square: polar(squircle, -0.26),
+  star: "M24 3c2.6 9.4 6.6 14.2 21 21-14.4 6.8-18.4 11.6-21 21-2.6-9.4-6.6-14.2-21-21C17.4 17.2 21.4 12.4 24 3z",
+  flower: polar((a) => 16 + 3.6 * Math.cos(5 * a), -0.3),
+  blob: polar((a) => 17 + 2.6 * Math.cos(2 * a + 0.6) + 1.4 * Math.cos(3 * a)),
+  scallop: polar((a) => 17 + 1.8 * Math.cos(8 * a)),
+  egg: polar((a) => 16.5 + 3 * Math.cos(a + 2.3)),
+  wide: "M4 23c0-8.5 9-13.5 20-13.5S44 14.5 44 23s-9 15-20 15S4 31.5 4 23z",
+  triangle: polar(poly(3, 22, 0.3), 0.15),
+  pentagon: polar(poly(5, 19.5), -0.3),
+  splat: polar((a) => 15.5 + 3.4 * Math.cos(7 * a) + 1.2 * Math.cos(2 * a)),
+  hexagon: polar(poly(6, 19), 0.3),
 };
 
-function avatar(color, shape = "round", size = 48) {
-  return `<svg class="avatar" viewBox="0 0 48 48" width="${size}" height="${size}" style="stroke:none;width:${size}px;height:${size}px">
-    <path d="${SHAPES[shape] ?? SHAPES.round}" fill="${color}"/>
+// ring: draw a selection outline that follows the shape.
+function avatar(color, shape = "round", size = 48, ring = false) {
+  const d = SHAPES[shape] ?? SHAPES.round;
+  const body = `<path d="${d}" fill="${color}"/>
     <rect x="25" y="16" width="3.2" height="7" rx="1.6" fill="#141414" transform="rotate(-18 26.6 19.5)"/>
-    <rect x="32" y="15" width="3.2" height="7" rx="1.6" fill="#141414" transform="rotate(-18 33.6 18.5)"/>
+    <rect x="32" y="15" width="3.2" height="7" rx="1.6" fill="#141414" transform="rotate(-18 33.6 18.5)"/>`;
+  return `<svg class="avatar" viewBox="0 0 48 48" width="${size}" height="${size}" style="stroke:none;width:${size}px;height:${size}px;overflow:visible">
+    ${ring ? `<path d="${d}" fill="none" stroke="#4a4a4a" stroke-width="2.2" transform="translate(24 24) scale(1.12) translate(-24 -24)"/>
+      <g transform="translate(24 24) scale(.86) translate(-24 -24)">${body}</g>` : body}
   </svg>`;
 }
 
@@ -269,20 +301,20 @@ $("composer").addEventListener("submit", (e) => {
 });
 
 // New Bot window
-const COLORS = ["#4cc06a", "#3b7ff0", "#f0a243", "#ef4b4b", "#8b5cf6", "#f2f2f2", "#22b8cf", "#e64980"];
+const COLORS = ["#f5f5f5", "#9a6b3f", "#e5484d", "#e8702e", "#e9a23b", "#4cc06a", "#4fb5a5", "#3b82f6", "#8b5cf6", "#e64a9c", "#7a7a7a"];
 const HARNESS_NAMES = { claude: "Claude Code", codex: "Codex", pi: "Pi" };
 const nb = { color: COLORS[0], shape: "round", harness: "claude" };
 const pickOne = (a) => a[Math.floor(Math.random() * a.length)];
 
 function renderNewBot() {
-  $("nb-preview").innerHTML = avatar(nb.color, nb.shape, 104);
+  $("nb-preview").innerHTML = avatar(nb.color, nb.shape, 150);
   $("nb-shapes").innerHTML = Object.keys(SHAPES).map((s) =>
-    `<button type="button" class="nb-shape ${s === nb.shape ? "on" : ""}" data-shape="${s}" title="${s}">${avatar(nb.color, s, 38)}</button>`).join("");
+    `<button type="button" class="nb-shape" data-shape="${s}" title="${s}">${avatar(nb.color, s, 60, s === nb.shape)}</button>`).join("");
   $("nb-colors").innerHTML = COLORS.map((c) =>
     `<button type="button" class="nb-color ${c === nb.color ? "on" : ""}" data-color="${c}" style="background:${c}" title="${c}"></button>`).join("");
   const list = harnesses.length ? harnesses : Object.keys(HARNESS_NAMES);
   $("nb-harness").innerHTML = list.map((h) =>
-    `<button type="button" class="${h === nb.harness ? "on" : ""}" data-harness="${h}">${HARNESS_NAMES[h] || h}</button>`).join("");
+    `<option value="${h}" ${h === nb.harness ? "selected" : ""}>${HARNESS_NAMES[h] || h}</option>`).join("");
   $("nb-create").disabled = !$("nb-name").value.trim();
 }
 
@@ -303,13 +335,13 @@ $("nb").addEventListener("mousedown", (e) => { if (e.target === $("nb")) closeNe
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("nb").hidden) closeNewBot(); });
 $("nb-name").addEventListener("input", () => { $("nb-create").disabled = !$("nb-name").value.trim(); });
 $("nb-form").addEventListener("click", (e) => {
-  const t = e.target.closest("[data-shape], [data-color], [data-harness]");
+  const t = e.target.closest("[data-shape], [data-color]");
   if (!t) return;
   if (t.dataset.shape) nb.shape = t.dataset.shape;
   if (t.dataset.color) nb.color = t.dataset.color;
-  if (t.dataset.harness) nb.harness = t.dataset.harness;
   renderNewBot();
 });
+$("nb-harness").addEventListener("change", (e) => { nb.harness = e.target.value; });
 $("nb-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const name = $("nb-name").value.trim();
