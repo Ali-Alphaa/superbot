@@ -1,4 +1,4 @@
-//! `botctl`: the CLI Bots use to manage their own routines. Works with any harness,
+//! `botctl`: the CLI Bots use for routines, other Bots, and handing their screen to the user. Works with any harness,
 //! because every harness can run a shell command. Talks to botd over local HTTP.
 //! No dependencies: a tiny HTTP/1.0 client over a TCP socket.
 
@@ -13,6 +13,7 @@ const HELP: &str = r#"botctl: manage your routines (scheduled tasks).
   botctl routine pause <id> | resume <id>
   botctl bots                                      List all Bots
   botctl ask "<Bot name or id>" "<message>"        Ask another Bot; prints its reply
+  botctl handoff "<what you need>"                 Ask the user to take over your screen; waits for "Done"
 
 Cron has 5 fields in the server's local time: minute hour day month weekday.
   "30 7 * * *"    every day at 07:30
@@ -21,7 +22,7 @@ Cron has 5 fields in the server's local time: minute hour day month weekday.
 When a routine fires, you get "<what to do>" as a message and your reply goes to the user's chat.
 Confirm the schedule with the user in plain words.
 
-`ask` can take minutes: run it with a long command timeout (10 minutes).
+`ask` and `handoff` can take minutes: run them with a long command timeout (10 minutes).
 If the other Bot takes longer, its reply arrives later as a new message."#;
 
 fn api(method: &str, path: &str, body: Option<String>) -> Result<String, String> {
@@ -83,6 +84,10 @@ fn run(args: &[String]) -> Result<String, String> {
         ["ask", to, message] => {
             let body = format!("{{\"from\":{},\"to\":{},\"text\":{}}}", json_str(&bot), json_str(to), json_str(message));
             api("POST", "/api/ask", Some(body))
+        }
+        ["handoff", text] => {
+            let body = format!("{{\"from\":{},\"text\":{}}}", json_str(&bot), json_str(text));
+            api("POST", "/api/handoff", Some(body))
         }
         _ => Ok(HELP.into()),
     }

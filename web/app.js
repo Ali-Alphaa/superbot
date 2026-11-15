@@ -159,6 +159,7 @@ function renderMessage(m, prev) {
     const q = m.question;
     out += `<div class="msg-row bot"><div class="bubble question ${q.picked != null ? "answered" : ""}" data-id="${m.id}">
       <h4>${esc(q.title)}</h4>
+      ${q.handoff && q.picked == null ? `<button class="open-screen">Open screen</button>` : ""}
       ${q.options.map((o, k) => `<button class="option ${q.picked === k ? "picked" : ""}" data-k="${k}">
         <span class="key">${"ABCDEF"[k]}</span>${esc(o)}</button>`).join("")}
     </div></div>`;
@@ -205,6 +206,7 @@ async function open(id) {
   markRead();
   render();
   if (details.open) openDetails(); // load the new Bot's routines
+  if (!$("screen").hidden) loadScreen();
 }
 
 function markRead() {
@@ -279,6 +281,49 @@ $("model-select").addEventListener("change", async (e) => {
 });
 $("effort-select").addEventListener("change", (e) => saveModel({ effort: e.target.value || null }));
 
+// Live screen: the Bot's own desktop, streamed by voxl. View only until you take over.
+let screenTimer = null;
+function setTakeover(on) {
+  $("screen-shield").hidden = on;
+  $("screen-take").classList.toggle("on", on);
+  $("screen-take").textContent = on ? "Give back" : "Take over";
+}
+async function loadScreen() {
+  const id = activeId;
+  $("screen-title").textContent = `${bot(id)?.name || "Bot"}'s screen`;
+  const frame = $("screen-frame");
+  try {
+    const { url } = await api("GET", `/api/bots/${id}/screen`); // also keeps it running while you watch
+    if (id !== activeId || $("screen").hidden) return;
+    if (frame.dataset.url !== url) { frame.dataset.url = url; frame.src = url; setTakeover(false); }
+    $("screen-msg").hidden = true;
+  } catch (err) {
+    frame.removeAttribute("src"); delete frame.dataset.url;
+    $("screen-msg").textContent = err.message;
+    $("screen-msg").hidden = false;
+  }
+}
+function openScreen() {
+  if (details.open) closeDetails(); // one right-hand panel at a time
+  $("screen").hidden = false;
+  loadScreen();
+  clearInterval(screenTimer);
+  screenTimer = setInterval(loadScreen, 60000);
+}
+function closeScreen() {
+  $("screen").hidden = true;
+  clearInterval(screenTimer);
+  $("screen-frame").removeAttribute("src");
+  delete $("screen-frame").dataset.url;
+}
+$("screen-btn").addEventListener("click", () => ($("screen").hidden ? openScreen() : closeScreen()));
+$("screen-close").addEventListener("click", closeScreen);
+$("screen-take").addEventListener("click", () => {
+  const on = !$("screen-shield").hidden;
+  setTakeover(on);
+  if (on) $("screen-frame").focus();
+});
+
 // Live updates
 function connect() {
   const es = new EventSource("/api/events");
@@ -335,6 +380,7 @@ $("messages").addEventListener("click", (e) => {
     if (m) navigator.clipboard.writeText(m.text);
     return;
   }
+  if (e.target.closest(".open-screen")) return void openScreen();
   const opt = e.target.closest(".option");
   if (!opt) return;
   const card = opt.closest(".question");
@@ -423,6 +469,7 @@ const details = { open: false, tab: "activity", routines: [] };
 
 async function openDetails() {
   details.open = true;
+  if (!$("screen").hidden) closeScreen(); // one right-hand panel at a time
   details.routines = [];
   renderDetails();
   try { details.routines = await api("GET", `/api/bots/${activeId}/routines`); } catch {}

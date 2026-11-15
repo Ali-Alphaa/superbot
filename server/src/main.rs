@@ -5,6 +5,7 @@ mod adapters;
 mod cron;
 mod db;
 mod runner;
+mod screen;
 
 use axum::extract::{Path, Request, State};
 use axum::http::{header, StatusCode};
@@ -74,6 +75,7 @@ async fn main() {
     std::fs::create_dir_all(&workspace).expect("create WORKSPACE_DIR");
     let db = Db::open(&data_dir.join("app.sqlite")).expect("open database");
 
+    let screens = screen::Screens::from_env(data_dir.join("screens"));
     let app = App::new(db, Config {
         data_dir,
         workspace,
@@ -84,7 +86,7 @@ async fn main() {
         bot_token: random_bytes(24).iter().map(|x| format!("{x:02x}")).collect(),
         run_timeout: Duration::from_secs(60 * env("RUN_TIMEOUT_MINUTES", "60").parse::<u64>().unwrap_or(60)),
         default_harness,
-    });
+    }, screens);
 
     // First start: create the primary Bot.
     if app.db.bots().is_empty() {
@@ -104,7 +106,9 @@ async fn main() {
         .route("/bots/{id}/stop", post(stop_bot))
         .route("/bots/{id}/routines", get(list_routines).post(create_routine))
         .route("/routines/{id}", patch(update_routine).delete(delete_routine))
-        .route("/ask", post(ask));
+        .route("/bots/{id}/screen", get(screen_info))
+        .route("/ask", post(ask))
+        .route("/handoff", post(handoff));
     let router = Router::new()
         .nest("/api", api)
         .fallback(get(web))
@@ -114,10 +118,20 @@ async fn main() {
 
     app.recover();
     cron::start(app.clone());
+    if app.screens.is_some() {
+        let app = app.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(Duration::from_secs(60)).await;
+                app.screens.as_ref().unwrap().reap(|id| app.is_running(id)).await;
+            }
+        });
+    }
 
     let listener = tokio::net::TcpListener::bind((host.as_str(), port)).await.expect("bind");
     println!("Listening on http://{host}:{port}");
     println!("Harnesses on PATH: {}. Default: {}.", adapters::installed().join(", "), app.cfg.default_harness);
+    println!("Screens: {}.", if app.screens.is_some() { "on" } else { "off (install Xvfb and openbox to turn them on)" });
 
     // On SIGTERM/SIGINT: stop agents (queued work runs after restart), then exit.
     let shutdown_app = app.clone();
@@ -331,6 +345,9 @@ async fn delete_bot(State(app): State<AppState>, Path(id): Path<String>) -> Res 
         return Err(bad("The primary Bot can't be deleted"));
     }
     app.stop(&id);
+    if let Some(screens) = &app.screens {
+        screens.remove(&id).await;
+    }
     app.db.delete_bot(&id);
     app.send(json!({ "type": "botDeleted", "botId": id }));
     Ok(Json(json!({ "ok": true })))
@@ -367,6 +384,13 @@ async fn send_message(State(app): State<AppState>, Path(id): Path<String>, Json(
             app.db.set_question(mid, &q);
         }
     }
+    // Answering a handoff card the Bot is still waiting on: hand the answer to it directly.
+    if let Some(tx) = v["answer"]["messageId"].as_i64().and_then(|mid| app.take_handoff(mid)) {
+        let msg = app.db.add_message(&id, "user", &text, None, false, Some("done"));
+        app.push_message(&msg);
+        let _ = tx.send(text);
+        return Ok((StatusCode::ACCEPTED, Json(json!(msg))));
+    }
     let msg = app.db.add_message(&id, "user", &text, None, false, Some("queued"));
     app.push_message(&msg);
     app.enqueue(msg.clone());
@@ -392,6 +416,31 @@ async fn ask(State(app): State<AppState>, Json(v): Json<Value>) -> Result<String
     Ok(match app.ask(&from, to, text, wait).await {
         Some(reply) => reply,
         None => format!("{} is still working on it. Their reply will arrive later as a new message.", to.name),
+    })
+}
+
+// Screens: the live view of a Bot's screen. Opening it starts the screen.
+
+async fn screen_info(State(app): State<AppState>, Path(id): Path<String>) -> Res {
+    need_bot(&app, &id)?;
+    let off = || ApiError(StatusCode::NOT_FOUND, "Screens are off on this server. Install Xvfb, openbox, and voxl.".into());
+    let screens = app.screens.as_ref().filter(|_| screen::on_path("voxl")).ok_or_else(off)?;
+    let info = screens.ensure(&id, |b| app.is_running(b)).await;
+    let info = info.ok_or_else(|| ApiError(StatusCode::SERVICE_UNAVAILABLE, "All screens are in use. Try again when a Bot finishes.".into()))?;
+    // The proxy in front serves /screen/<port>/ from that local voxl port.
+    Ok(Json(json!({ "url": format!("/screen/{}/?token={}", info.port, info.token) })))
+}
+
+// A Bot hands its screen to the user: `botctl handoff`. Waits for "Done".
+
+async fn handoff(State(app): State<AppState>, Json(v): Json<Value>) -> Result<String, ApiError> {
+    let bot = v["from"].as_str().and_then(|id| app.db.bot(id)).ok_or_else(|| bad("Unknown Bot (BOT_ID)"))?;
+    let text = v["text"].as_str().map(str::trim).filter(|t| !t.is_empty()).ok_or_else(|| bad("Say what you need"))?;
+    let text: String = text.chars().take(300).collect();
+    let wait = Duration::from_secs(9 * 60); // under the 10 minute max most harnesses allow a command
+    Ok(match app.handoff(&bot, &text, wait).await {
+        Some(answer) => format!("The user answered: {answer}"),
+        None => "The user hasn't answered yet. Stop here and tell them in one line what you need. You'll get their answer as a new message.".into(),
     })
 }
 

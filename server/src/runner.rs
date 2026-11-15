@@ -3,6 +3,7 @@
 
 use crate::adapters::{self, AbortReason, AgentEvent, RunInput};
 use crate::db::{Bot, BotPatch, Db, Message};
+use crate::screen::{self, Screens};
 use serde_json::{json, Value};
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
@@ -41,15 +42,21 @@ pub struct App {
     pub cfg: Config,
     /// Every live update for the web app, as JSON text.
     pub tx: broadcast::Sender<String>,
+    /// Each Bot's screen. None when this server has no display tools.
+    pub screens: Option<Screens>,
     bots: Mutex<HashMap<String, BotState>>,
-    /// Bots waiting on `botctl ask`, by the asked message's id.
+    /// Bots waiting on `botctl ask` or `botctl handoff`, by the message's id.
     waiters: Mutex<HashMap<i64, oneshot::Sender<String>>>,
     closing: AtomicBool,
 }
 
 impl App {
-    pub fn new(db: Db, cfg: Config) -> Arc<App> {
-        Arc::new(App { db, cfg, tx: broadcast::channel(1024).0, bots: Mutex::default(), waiters: Mutex::default(), closing: AtomicBool::new(false) })
+    pub fn new(db: Db, cfg: Config, screens: Option<Screens>) -> Arc<App> {
+        Arc::new(App { db, cfg, tx: broadcast::channel(1024).0, screens, bots: Mutex::default(), waiters: Mutex::default(), closing: AtomicBool::new(false) })
+    }
+
+    pub fn is_running(&self, bot_id: &str) -> bool {
+        self.state().get(bot_id).is_some_and(|s| s.run.is_some())
     }
 
     pub fn send(&self, v: Value) {
@@ -90,7 +97,7 @@ impl App {
         self.send(json!({ "type": "message", "message": m, "bot": bot }));
     }
 
-    fn bot_dir(&self, id: &str) -> PathBuf {
+    pub fn bot_dir(&self, id: &str) -> PathBuf {
         self.cfg.data_dir.join("bots").join(id)
     }
     fn memory_file(&self, id: &str) -> PathBuf {
@@ -185,6 +192,11 @@ impl App {
             ]);
             let path = std::env::var("PATH").unwrap_or_default();
             env.insert("PATH".into(), format!("{}:{path}", self.cfg.bin_dir.display()));
+            if let Some(screens) = &self.screens
+                && let Some(info) = screens.ensure(&bot.id, |id| self.is_running(id)).await
+            {
+                env.extend(screen::bot_env(&info, &bot.id, &self.bot_dir(&bot.id)));
+            }
             let input = RunInput {
                 prompt: prompt.clone(),
                 system: self.system_prompt(&bot),
@@ -275,6 +287,29 @@ impl App {
             self.waiters.lock().unwrap().remove(&msg.id);
         }
         reply
+    }
+
+    /// The Bot needs the user on its screen (a login, 2FA, a CAPTCHA). Posts a card
+    /// with "Done" and waits for the answer, or None after `wait`; then the answer
+    /// reaches the Bot later as a normal message.
+    pub async fn handoff(&self, bot: &Bot, text: &str, wait: Duration) -> Option<String> {
+        let q = json!({ "title": text, "options": ["Done", "I can't right now"], "handoff": true });
+        let m = self.db.add_message(&bot.id, "bot", "", Some(&q), false, None);
+        self.db.update_bot(&bot.id, BotPatch { unread: Some(true), ..Default::default() });
+        let (tx, rx) = oneshot::channel();
+        self.waiters.lock().unwrap().insert(m.id, tx);
+        self.push_message(&m);
+        let answer = tokio::time::timeout(wait, rx).await.ok().and_then(Result::ok);
+        if answer.is_none() {
+            self.waiters.lock().unwrap().remove(&m.id);
+        }
+        answer
+    }
+
+    /// Takes the waiter for a handoff card, if its Bot is still waiting.
+    pub fn take_handoff(&self, message_id: i64) -> Option<oneshot::Sender<String>> {
+        let is_handoff = self.db.message(message_id).and_then(|m| m.question).is_some_and(|q| q["handoff"] == json!(true));
+        if is_handoff { self.waiters.lock().unwrap().remove(&message_id) } else { None }
     }
 
     /// Sends the asked Bot's reply to whoever asked: the waiting `botctl ask`,
@@ -377,7 +412,7 @@ They talk to you in a chat app, like messaging a coworker. Finish work end to en
 
 ## Routines
 - For recurring or scheduled work, use `{botctl}`. Run `{botctl} help` to see how.
-
+{screen}
 ## Style
 - Reply like a teammate in chat: short, plain English. Markdown is fine.
 - Each separate text block you write is shown as its own chat bubble. Before long work, send a one-line heads-up.
@@ -396,6 +431,7 @@ Current time: {now}."#,
             name = bot.name,
             // Full path: some harnesses run commands in a login shell that resets PATH.
             botctl = self.cfg.bin_dir.join("botctl").display(),
+            screen = if self.screens.is_some() { screen_prompt(&self.cfg.bin_dir.join("botctl").display().to_string()) } else { String::new() },
             user = self.cfg.user_name,
             ws = self.cfg.workspace.display(),
             mem_path = self.memory_file(&bot.id).display(),
@@ -436,4 +472,18 @@ fn tool_label(name: &str, detail: &str) -> String {
         format!("Using {name}")
     };
     if detail.is_empty() { verb } else { format!("{verb}: {detail}") }
+}
+
+/// How to use the Bot's screen. Tools are plain CLIs, so this works on every harness.
+fn screen_prompt(botctl: &str) -> String {
+    format!(
+        r#"
+## Your screen
+- You have your own screen with a browser. The user can watch it live and take over.
+- Prefer APIs and command-line tools. Use the browser for sites that have no API.
+- Websites: `agent-browser`. Before your first use in a task, run `agent-browser skills get core` and follow it, with one exception: your session and browser profile are already set for you, so never pass `--session`, `--profile`, or `--headed`, and never create other sessions. Your sign-ins persist between tasks.
+- Desktop apps: `agent-desktop`. Before your first use, run `agent-desktop skills get desktop`.
+- When you need the user on your screen (a login, 2FA code, CAPTCHA, or payment check), run: {botctl} handoff "<what you need, in one line>". It waits until they finish, so give the command a 10 minute timeout. Never ask for passwords in chat.
+"#
+    )
 }

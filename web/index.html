@@ -41,6 +41,7 @@
     <main class="chat">
       <header class="chat-header">
         <div class="bot-pill" id="bot-pill"></div>
+        <button class="share-btn screen-btn" id="screen-btn" title="Watch this Bot's screen">Screen</button>
         <button class="share-btn">Share</button>
       </header>
 
@@ -71,6 +72,21 @@
     </main>
 
     <aside class="details" id="details" hidden></aside>
+
+    <aside class="screen" id="screen" hidden>
+      <div class="screen-bar">
+        <span id="screen-title"></span>
+        <button class="screen-take" id="screen-take">Take over</button>
+        <button class="icon-btn" id="screen-close" title="Close">
+          <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </div>
+      <div class="screen-view">
+        <iframe id="screen-frame" title="Bot screen" allow="clipboard-read; clipboard-write"></iframe>
+        <div class="screen-shield" id="screen-shield" title="Click Take over to use this screen"></div>
+        <div class="screen-msg" id="screen-msg" hidden></div>
+      </div>
+    </aside>
   </div>
   <div class="modal-backdrop" id="nb" hidden>
     <form class="modal" id="nb-form" autocomplete="off">

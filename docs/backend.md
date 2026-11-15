@@ -67,7 +67,11 @@ All JSON. Browser auth: HTTP Basic with `AUTH_PASSWORD`.
 - `POST /api/bots/:id/read`, `POST /api/bots/:id/stop`
 - `GET|POST /api/bots/:id/routines` `{name, cron, instruction}`
 - `PATCH|DELETE /api/routines/:id` `{enabled?, name?, cron?, instruction?}`
+- `GET /api/bots/:id/screen`: starts the Bot's screen and returns its live view URL
+- `POST /api/handoff` `{from, text}`: `botctl handoff`; waits for the user's answer
 
 ## Not built yet
 
-Approvals before risky actions, a browser/desktop for computer use, Vault for secrets, per-Bot resource limits, Slack.
+Approvals before risky actions, Vault for secrets, per-Bot resource limits, Slack.
+
+Computer use (each Bot's screen, browser, and live view) is in [computer.md](computer.md).

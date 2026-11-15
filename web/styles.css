@@ -108,6 +108,23 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 }
 .share-btn:hover, .bot-pill:hover { background: #292929; }
 
+/* A Bot's live screen, beside the chat */
+.share-btn.screen-btn { right: 108px; }
+.app:has(.screen:not([hidden])) .share-btn { display: none; } /* the panel has its own close button */
+.screen { width: 46%; min-width: 420px; flex-shrink: 0; display: flex; flex-direction: column; border-left: 1px solid var(--border); background: #111; }
+.screen[hidden] { display: none; }
+.screen-bar { height: 72px; flex-shrink: 0; display: flex; align-items: center; gap: 10px; padding: 0 16px; }
+.screen-bar span { flex: 1; font-size: 16px; color: #dcdcdc; }
+.screen-take { background: #1f1f1f; padding: 8px 16px; border-radius: 999px; font-size: 15px; }
+.screen-take:hover { background: #292929; }
+.screen-take.on { background: var(--blue); color: #fff; }
+.screen-view { flex: 1; position: relative; margin: 0 16px 16px; border-radius: 12px; overflow: hidden; background: #000; }
+.screen-view iframe { width: 100%; height: 100%; border: 0; display: block; }
+.screen-shield { position: absolute; inset: 0; cursor: default; }
+.screen-shield[hidden] { display: none; }
+.screen-msg { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center; color: var(--text-dim); }
+.question .open-screen { margin: 4px 0 6px; background: var(--blue); color: #fff; padding: 7px 14px; border-radius: 999px; font-size: 15px; }
+
 .messages {
   flex: 1; overflow-y: auto;
   padding: 18px 80px 140px 80px;
