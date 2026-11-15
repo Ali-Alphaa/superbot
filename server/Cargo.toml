@@ -1,0 +1,22 @@
+[package]
+name = "botd"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[[bin]]
+name = "botd"
+path = "src/main.rs"
+
+[[bin]]
+name = "botctl"
+path = "src/bin/botctl.rs"
+
+[dependencies]
+axum = "0.8.9"
+chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
+rusqlite = { version = "0.43.0", features = ["bundled"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "process", "io-util", "sync", "time", "signal"] }
+tokio-stream = { version = "0.1.19", features = ["sync"] }

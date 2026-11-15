@@ -36,10 +36,11 @@ We build as much as possible in Rust, for speed, low memory use, and one small b
 
 - [Grok Bot reference](docs/grok-bot-reference.md): what we are rebuilding.
 - [Architecture](docs/architecture.md): the plan and open decisions.
+- [Backend](docs/backend.md): how the server works, and how to run and deploy it.
 
 ## Status
 
-Early. Nothing works yet.
+Early. Chat with Bots on Claude Code, Codex, or Pi works, with memory and routines. See [Backend](docs/backend.md).
 
 ## License
 

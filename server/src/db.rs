@@ -1,0 +1,301 @@
+//! SQLite storage: Bots, messages, routines. One connection behind a mutex;
+//! every call is short.
+
+use rusqlite::{params, Connection, OptionalExtension, Row};
+use serde::Serialize;
+use serde_json::Value;
+use std::sync::Mutex;
+
+#[derive(Clone, Serialize)]
+pub struct Bot {
+    pub id: String,
+    pub name: String,
+    pub color: String,
+    pub shape: String,
+    pub harness: String,
+    pub model: Option<String>,
+    #[serde(skip)]
+    pub session_id: Option<String>,
+    pub primary: bool,
+    pub hidden: bool,
+    pub unread: bool,
+    pub created_at: i64,
+}
+
+#[derive(Clone, Serialize)]
+pub struct Message {
+    pub id: i64,
+    #[serde(rename = "botId")]
+    pub bot_id: String,
+    /// "user", "bot", or "routine"
+    pub role: String,
+    pub text: String,
+    /// { title, options, picked? }
+    pub question: Option<Value>,
+    pub error: bool,
+    /// "queued" | "running" | "done" for user and routine messages
+    #[serde(skip)]
+    pub status: Option<String>,
+    #[serde(rename = "at")]
+    pub created_at: i64,
+}
+
+#[derive(Clone, Serialize)]
+pub struct Routine {
+    pub id: String,
+    pub bot_id: String,
+    pub name: String,
+    pub cron: String,
+    pub instruction: String,
+    pub enabled: bool,
+    pub last_run_at: Option<i64>,
+    pub created_at: i64,
+}
+
+#[derive(Default)]
+pub struct BotPatch {
+    pub name: Option<String>,
+    pub color: Option<String>,
+    pub shape: Option<String>,
+    pub harness: Option<String>,
+    pub model: Option<Option<String>>,
+    pub session_id: Option<Option<String>>,
+    pub hidden: Option<bool>,
+    pub unread: Option<bool>,
+}
+
+pub struct Db(Mutex<Connection>);
+
+pub fn now() -> i64 {
+    chrono::Utc::now().timestamp_millis()
+}
+
+fn bot_row(r: &Row) -> rusqlite::Result<Bot> {
+    Ok(Bot {
+        id: r.get("id")?,
+        name: r.get("name")?,
+        color: r.get("color")?,
+        shape: r.get("shape")?,
+        harness: r.get("harness")?,
+        model: r.get("model")?,
+        session_id: r.get("session_id")?,
+        primary: r.get("primary_bot")?,
+        hidden: r.get("hidden")?,
+        unread: r.get("unread")?,
+        created_at: r.get("created_at")?,
+    })
+}
+
+fn message_row(r: &Row) -> rusqlite::Result<Message> {
+    let q: Option<String> = r.get("question")?;
+    Ok(Message {
+        id: r.get("id")?,
+        bot_id: r.get("bot_id")?,
+        role: r.get("role")?,
+        text: r.get("text")?,
+        question: q.and_then(|s| serde_json::from_str(&s).ok()),
+        error: r.get("error")?,
+        status: r.get("status")?,
+        created_at: r.get("created_at")?,
+    })
+}
+
+fn routine_row(r: &Row) -> rusqlite::Result<Routine> {
+    Ok(Routine {
+        id: r.get("id")?,
+        bot_id: r.get("bot_id")?,
+        name: r.get("name")?,
+        cron: r.get("cron")?,
+        instruction: r.get("instruction")?,
+        enabled: r.get("enabled")?,
+        last_run_at: r.get("last_run_at")?,
+        created_at: r.get("created_at")?,
+    })
+}
+
+impl Db {
+    pub fn open(path: &std::path::Path) -> rusqlite::Result<Db> {
+        let c = Connection::open(path)?;
+        c.execute_batch(
+            "PRAGMA journal_mode = WAL;
+            PRAGMA foreign_keys = ON;
+            CREATE TABLE IF NOT EXISTS bots (
+              id TEXT PRIMARY KEY,
+              name TEXT NOT NULL,
+              color TEXT NOT NULL,
+              shape TEXT NOT NULL,
+              harness TEXT NOT NULL,
+              model TEXT,
+              session_id TEXT,
+              primary_bot INTEGER NOT NULL DEFAULT 0,
+              hidden INTEGER NOT NULL DEFAULT 0,
+              unread INTEGER NOT NULL DEFAULT 0,
+              created_at INTEGER NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS messages (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              bot_id TEXT NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
+              role TEXT NOT NULL,
+              text TEXT NOT NULL,
+              question TEXT,
+              error INTEGER NOT NULL DEFAULT 0,
+              status TEXT,
+              created_at INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS messages_bot ON messages(bot_id, id);
+            CREATE TABLE IF NOT EXISTS routines (
+              id TEXT PRIMARY KEY,
+              bot_id TEXT NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
+              name TEXT NOT NULL,
+              cron TEXT NOT NULL,
+              instruction TEXT NOT NULL,
+              enabled INTEGER NOT NULL DEFAULT 1,
+              last_run_at INTEGER,
+              created_at INTEGER NOT NULL
+            );",
+        )?;
+        Ok(Db(Mutex::new(c)))
+    }
+
+    fn c(&self) -> std::sync::MutexGuard<'_, Connection> {
+        self.0.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    // Bots
+
+    pub fn bots(&self) -> Vec<Bot> {
+        let c = self.c();
+        let mut s = c.prepare("SELECT * FROM bots ORDER BY primary_bot DESC, created_at").unwrap();
+        s.query_map([], bot_row).unwrap().filter_map(Result::ok).collect()
+    }
+
+    pub fn bot(&self, id: &str) -> Option<Bot> {
+        self.c().query_row("SELECT * FROM bots WHERE id = ?", [id], bot_row).optional().ok().flatten()
+    }
+
+    pub fn create_bot(&self, name: &str, color: &str, shape: &str, harness: &str, model: Option<&str>, primary: bool) -> Bot {
+        let id = crate::short_id();
+        self.c()
+            .execute(
+                "INSERT INTO bots (id, name, color, shape, harness, model, primary_bot, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                params![id, name, color, shape, harness, model, primary, now()],
+            )
+            .unwrap();
+        self.bot(&id).unwrap()
+    }
+
+    pub fn update_bot(&self, id: &str, p: BotPatch) {
+        let c = self.c();
+        let set = |col: &str, v: &dyn rusqlite::ToSql| {
+            c.execute(&format!("UPDATE bots SET {col} = ? WHERE id = ?"), params![v, id]).unwrap();
+        };
+        if let Some(v) = p.name { set("name", &v) }
+        if let Some(v) = p.color { set("color", &v) }
+        if let Some(v) = p.shape { set("shape", &v) }
+        if let Some(v) = p.harness { set("harness", &v) }
+        if let Some(v) = p.model { set("model", &v) }
+        if let Some(v) = p.session_id { set("session_id", &v) }
+        if let Some(v) = p.hidden { set("hidden", &v) }
+        if let Some(v) = p.unread { set("unread", &v) }
+    }
+
+    pub fn delete_bot(&self, id: &str) {
+        self.c().execute("DELETE FROM bots WHERE id = ?", [id]).unwrap();
+    }
+
+    // Messages
+
+    pub fn messages(&self, bot_id: &str, limit: i64) -> Vec<Message> {
+        let c = self.c();
+        let mut s = c
+            .prepare("SELECT * FROM (SELECT * FROM messages WHERE bot_id = ? ORDER BY id DESC LIMIT ?) ORDER BY id")
+            .unwrap();
+        s.query_map(params![bot_id, limit], message_row).unwrap().filter_map(Result::ok).collect()
+    }
+
+    pub fn last_message(&self, bot_id: &str) -> Option<Message> {
+        self.c()
+            .query_row(
+                "SELECT * FROM messages WHERE bot_id = ? AND role != 'routine' ORDER BY id DESC LIMIT 1",
+                [bot_id],
+                message_row,
+            )
+            .optional()
+            .ok()
+            .flatten()
+    }
+
+    pub fn message(&self, id: i64) -> Option<Message> {
+        self.c().query_row("SELECT * FROM messages WHERE id = ?", [id], message_row).optional().ok().flatten()
+    }
+
+    pub fn add_message(&self, bot_id: &str, role: &str, text: &str, question: Option<&Value>, error: bool, status: Option<&str>) -> Message {
+        let c = self.c();
+        c.execute(
+            "INSERT INTO messages (bot_id, role, text, question, error, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            params![bot_id, role, text, question.map(|q| q.to_string()), error, status, now()],
+        )
+        .unwrap();
+        let id = c.last_insert_rowid();
+        drop(c);
+        self.message(id).unwrap()
+    }
+
+    pub fn set_status(&self, id: i64, status: &str) {
+        self.c().execute("UPDATE messages SET status = ? WHERE id = ?", params![status, id]).unwrap();
+    }
+
+    pub fn set_question(&self, id: i64, q: &Value) {
+        self.c().execute("UPDATE messages SET question = ? WHERE id = ?", params![q.to_string(), id]).unwrap();
+    }
+
+    pub fn pending(&self) -> Vec<Message> {
+        let c = self.c();
+        let mut s = c.prepare("SELECT * FROM messages WHERE status IN ('queued', 'running') ORDER BY id").unwrap();
+        s.query_map([], message_row).unwrap().filter_map(Result::ok).collect()
+    }
+
+    // Routines
+
+    pub fn routines(&self, bot_id: Option<&str>) -> Vec<Routine> {
+        let c = self.c();
+        let mut s = c
+            .prepare("SELECT * FROM routines WHERE ?1 IS NULL OR bot_id = ?1 ORDER BY created_at")
+            .unwrap();
+        s.query_map([bot_id], routine_row).unwrap().filter_map(Result::ok).collect()
+    }
+
+    pub fn routine(&self, id: &str) -> Option<Routine> {
+        self.c().query_row("SELECT * FROM routines WHERE id = ?", [id], routine_row).optional().ok().flatten()
+    }
+
+    pub fn add_routine(&self, bot_id: &str, name: &str, cron: &str, instruction: &str) -> Routine {
+        let id = crate::short_id();
+        self.c()
+            .execute(
+                "INSERT INTO routines (id, bot_id, name, cron, instruction, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                params![id, bot_id, name, cron, instruction, now()],
+            )
+            .unwrap();
+        self.routine(&id).unwrap()
+    }
+
+    pub fn update_routine(&self, id: &str, name: Option<&str>, cron: Option<&str>, instruction: Option<&str>, enabled: Option<bool>) {
+        let c = self.c();
+        let set = |col: &str, v: &dyn rusqlite::ToSql| {
+            c.execute(&format!("UPDATE routines SET {col} = ? WHERE id = ?"), params![v, id]).unwrap();
+        };
+        if let Some(v) = name { set("name", &v) }
+        if let Some(v) = cron { set("cron", &v) }
+        if let Some(v) = instruction { set("instruction", &v) }
+        if let Some(v) = enabled { set("enabled", &v) }
+    }
+
+    pub fn routine_ran(&self, id: &str, at: i64) {
+        self.c().execute("UPDATE routines SET last_run_at = ? WHERE id = ?", params![at, id]).unwrap();
+    }
+
+    pub fn delete_routine(&self, id: &str) {
+        self.c().execute("DELETE FROM routines WHERE id = ?", [id]).unwrap();
+    }
+}

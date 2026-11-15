@@ -1,4 +1,4 @@
-// Prototype UI with mock data. No backend yet.
+// Thin client: all state lives on the server. Live updates come over /api/events.
 
 const SHAPES = {
   round: "M24 5c11.5 0 19 7.5 19 18.5S35 43 23.5 43 5 35.5 5 24.5 12.5 5 24 5z",
@@ -9,109 +9,143 @@ const SHAPES = {
 
 function avatar(color, shape = "round", size = 48) {
   return `<svg class="avatar" viewBox="0 0 48 48" width="${size}" height="${size}" style="stroke:none;width:${size}px;height:${size}px">
-    <path d="${SHAPES[shape]}" fill="${color}"/>
+    <path d="${SHAPES[shape] ?? SHAPES.round}" fill="${color}"/>
     <rect x="25" y="16" width="3.2" height="7" rx="1.6" fill="#141414" transform="rotate(-18 26.6 19.5)"/>
     <rect x="32" y="15" width="3.2" height="7" rx="1.6" fill="#141414" transform="rotate(-18 33.6 18.5)"/>
   </svg>`;
 }
 
-const bots = [
-  { id: "calorie", name: "Calorie Tracker", color: "#4cc06a", shape: "wide", unread: true,
-    messages: [
-      { from: "bot", time: "Today 8:02 AM", html: "<p>Morning! Log breakfast whenever you're ready.</p>" },
-      { from: "user", html: "2 eggs, toast, coffee with milk" },
-      { from: "bot", html: "<p>You're at 1,880 kcal and 78.3g protein, so ~60g protein left for today.</p>" },
-    ] },
-  { id: "tech", name: "Technical Explainer", color: "#3b7ff0", shape: "star",
-    messages: [
-      { from: "bot", time: "Today 5:17 PM", html: "<p>Hey David! I'm here to break down technical stuff into plain English, from code and architecture to new AI tools and whatever else shows up on your radar.</p>" },
-      { from: "bot", question: { title: "What do you mostly want explained?", options: [
-        "Code and repos I'm working with",
-        "New AI tools, models, and papers",
-        "CS and engineering fundamentals",
-        "A mix, whatever I throw at you",
-      ] } },
-      { from: "user", html: "tell me about your VM, what are all the specs" },
-      { from: "bot", html: "<p>Checking my computer's specs now.</p>" },
-      { from: "bot", html: `<p>It's a modest cloud Linux box, more like a solid dev machine than a powerhouse:</p>
-        <ul>
-          <li><strong>OS:</strong> Debian 13 (trixie), Linux kernel 6.12, x86_64</li>
-          <li><strong>CPU:</strong> 8 cores of an Intel Xeon (1 thread per core, so 8 threads total), with AVX2 and AVX-512 support</li>
-          <li><strong>RAM:</strong> 15 GB with no swap. About 13 GB of that is in use right now and only around 2 GB is free.</li>
-          <li><strong>Disk:</strong> 128 GB, with 8 GB used and 120 GB free</li>
-          <li><strong>GPU:</strong> none</li>
-        </ul>
-        <p>The core idea: one shared machine, but every Bot gets its own screen on it.</p>` },
-    ] },
-  { id: "time", name: "Time Auditor", color: "#f0a243", shape: "round",
-    messages: [{ from: "bot", time: "Yesterday 9:00 PM", html: "<p>Yesterday, Saturday 14.11.2026: David's time went 4h to deep work, 2h to calls, 1.5h to email.</p>" }] },
-  { id: "todoist", name: "David Todoist", color: "#ef4b4b", shape: "round",
-    messages: [{ from: "bot", time: "Today 7:30 AM", html: "<p>Done, the Morning Todoist reminders routine now runs daily at 7:30.</p>" }] },
-  { id: "github", name: "GitHub Viewer", color: "#f2f2f2", shape: "round",
-    messages: [{ from: "bot", time: "Today 3:41 PM", html: "<p>No — that 1–8 list is not the final build order. Steps 3 and 5 depend on the adapter work.</p>" }] },
-  { id: "yt", name: "YouTube Titles", color: "#f2f2f2", shape: "cloud",
-    messages: [{ from: "bot", time: "Today 1:12 PM", html: "<p>Step 1 only — lock deletes. Don't connect the channel until you approve.</p>" }] },
-  { id: "discord", name: "New Discord Manager", color: "#8b5cf6", shape: "wide",
-    messages: [{ from: "bot", time: "Today 11:05 AM", html: "<p>How should I get access to david-internal/... ? A bot token or an invite?</p>" }] },
-];
-
-const primary = { name: "Grok Bot", color: "#f5f5f5", shape: "round" };
-let activeId = "tech";
-let filter = "";
-
 const $ = (id) => document.getElementById(id);
-const strip = (html) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
-function preview(bot) {
-  const last = [...bot.messages].reverse().find((m) => m.html);
-  return last ? strip(last.html) : "";
+// Small, safe Markdown: escape first, then add formatting.
+function md(src) {
+  const blocks = [];
+  let s = esc(src).replace(/```[^\n]*\n([\s\S]*?)```/g, (_, code) => `\u0000${blocks.push(code) - 1}\u0000`);
+  const inline = (t) => t
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>")
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
+    .replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g, '$1<a href="$2" target="_blank" rel="noopener">$2</a>');
+  return s.split(/\n{2,}/).map((para) => {
+    const lines = para.split("\n");
+    if (/^\u0000\d+\u0000$/.test(para.trim())) return para.trim();
+    if (lines.every((l) => /^\s*[-*] /.test(l))) return `<ul>${lines.map((l) => `<li>${inline(l.replace(/^\s*[-*] /, ""))}</li>`).join("")}</ul>`;
+    if (lines.every((l) => /^\s*\d+[.)] /.test(l))) return `<ol>${lines.map((l) => `<li>${inline(l.replace(/^\s*\d+[.)] /, ""))}</li>`).join("")}</ol>`;
+    const h = para.match(/^#{1,4} (.*)$/);
+    if (h && lines.length === 1) return `<p><strong>${inline(h[1])}</strong></p>`;
+    return `<p>${lines.map(inline).join("<br>")}</p>`;
+  }).join("").replace(/\u0000(\d+)\u0000/g, (_, i) => `<pre><code>${blocks[i]}</code></pre>`);
 }
 
+async function api(method, path, body) {
+  const res = await fetch(path, {
+    method,
+    headers: body ? { "content-type": "application/json" } : {},
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+
+// State
+let me = { name: "" };
+let harnesses = [];
+let defaultHarness = "claude";
+let bots = [];
+const messages = {}; // botId -> array, loaded on first open
+const drafts = {}; // botId -> streaming text
+let activeId = localStorage.getItem("activeBot");
+let filter = "";
+let showHidden = false;
+
+const bot = (id) => bots.find((b) => b.id === id);
+const primary = () => bots.find((b) => b.primary);
+
+function upsertBot(b) {
+  const i = bots.findIndex((x) => x.id === b.id);
+  if (i >= 0) bots[i] = { ...bots[i], ...b }; else bots.push(b);
+}
+
+// Sidebar
 function renderSidebar() {
-  $("primary-bot").innerHTML = `<div class="avatar-wrap">${avatar(primary.color, primary.shape, 82)}
-    <span class="badge"><svg viewBox="0 0 24 24"><path d="M12 2l3 7 7 .6-5.3 4.7 1.6 7.2L12 17.8 5.7 21.5l1.6-7.2L2 9.6 9 9z"/></svg></span></div>
-    <span>${primary.name}</span>`;
+  const p = primary();
+  $("primary-bot").innerHTML = p ? `<div class="avatar-wrap">${avatar(p.color, p.shape, 82)}
+    <span class="badge"><svg viewBox="0 0 24 24"><path d="M12 2l3 7 7 .6-5.3 4.7 1.6 7.2L12 17.8 5.7 21.5l1.6-7.2L2 9.6 9 9z"/></svg></span>
+    ${p.unread && p.id !== activeId ? '<span class="unread"></span>' : ""}</div>
+    <span>${esc(p.name)}</span>` : "";
+  $("primary-bot").classList.toggle("active", p?.id === activeId);
 
   const q = filter.toLowerCase();
-  $("bot-list").innerHTML = bots
-    .filter((b) => !q || b.name.toLowerCase().includes(q) || preview(b).toLowerCase().includes(q))
-    .map((b) => `<button class="bot-row ${b.id === activeId ? "active" : ""}" data-id="${b.id}">
+  const list = bots.filter((b) => !b.primary && b.hidden === showHidden)
+    .filter((b) => !q || b.name.toLowerCase().includes(q) || (b.preview || "").toLowerCase().includes(q));
+  $("bot-list").innerHTML = list.map((b) => `<button class="bot-row ${b.id === activeId ? "active" : ""}" data-id="${b.id}">
       ${avatar(b.color, b.shape, 52)}
-      <div class="meta"><div class="name">${b.name}</div><div class="preview">${esc(preview(b))}</div></div>
-      ${b.unread ? '<span class="unread"></span>' : ""}
-    </button>`).join("");
+      <div class="meta"><div class="name">${esc(b.name)}</div>
+        <div class="preview">${b.working ? `<em>${esc(b.status || "Working")}…</em>` : esc(b.preview || "")}</div></div>
+      ${b.unread && b.id !== activeId ? '<span class="unread"></span>' : ""}
+    </button>`).join("") || (showHidden ? '<div class="empty">No hidden Bots.</div>' : "");
+
+  const hidden = bots.filter((b) => b.hidden).length;
+  $("hidden-label").textContent = showHidden ? "Back to Bots" : "Hidden Bots";
+  $("hidden-count").textContent = showHidden ? "" : hidden;
+  $("me-name").textContent = me.name;
+  $("me-avatar").textContent = (me.name || "?")[0].toUpperCase();
 }
 
+// Chat
 const ACTIONS = `<div class="actions">
-  <button title="React"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M8.5 14.5c1 1.3 2.1 2 3.5 2s2.5-.7 3.5-2"/><path d="M9.5 10v.5M14.5 10v.5"/></svg></button>
-  <button title="Reply"><svg viewBox="0 0 24 24"><path d="M9 7L4 12l5 5"/><path d="M4 12h10a6 6 0 0 1 6 6"/></svg></button>
-  <button title="More"><svg viewBox="0 0 24 24"><path d="M6 12h.01M12 12h.01M18 12h.01" stroke-width="3"/></svg></button>
+  <button title="Copy" data-act="copy"><svg viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg></button>
 </div>`;
 
-function renderMessage(m, i) {
-  let out = m.time ? `<div class="timestamp">${m.time}</div>` : "";
+function when(ts) {
+  const d = new Date(ts);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const day = new Date(d); day.setHours(0, 0, 0, 0);
+  const diff = (today - day) / 86400000;
+  const time = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  if (diff === 0) return `Today ${time}`;
+  if (diff === 1) return `Yesterday ${time}`;
+  return `${d.toLocaleDateString([], { month: "short", day: "numeric" })} ${time}`;
+}
+
+function renderMessage(m, prev) {
+  let out = !prev || m.at - prev.at > 30 * 60000 ? `<div class="timestamp">${when(m.at)}</div>` : "";
+  if (m.role === "routine") return out + `<div class="timestamp routine">Routine · ${esc(m.text)}</div>`;
+  if (m.role === "user") return out + `<div class="msg-row user"><div class="bubble">${esc(m.text).replace(/\n/g, "<br>")}</div></div>`;
+  if (m.text) {
+    out += `<div class="msg-row bot" data-id="${m.id}"><div class="bubble ${m.error ? "error" : ""}">${md(m.text)}</div>${ACTIONS}</div>`;
+  }
   if (m.question) {
     const q = m.question;
-    out += `<div class="msg-row bot"><div class="bubble question ${q.picked != null ? "answered" : ""}" data-i="${i}">
-      <h4>${q.title}</h4>
+    out += `<div class="msg-row bot"><div class="bubble question ${q.picked != null ? "answered" : ""}" data-id="${m.id}">
+      <h4>${esc(q.title)}</h4>
       ${q.options.map((o, k) => `<button class="option ${q.picked === k ? "picked" : ""}" data-k="${k}">
-        <span class="key">${"ABCD"[k]}</span>${esc(o)}</button>`).join("")}
-    </div>${ACTIONS}</div>`;
-  } else if (m.typing) {
-    out += `<div class="msg-row bot"><div class="bubble typing"><span></span><span></span><span></span></div></div>`;
-  } else {
-    out += `<div class="msg-row ${m.from}"><div class="bubble">${m.html}</div>${m.from === "bot" ? ACTIONS : ""}</div>`;
+        <span class="key">${"ABCDEF"[k]}</span>${esc(o)}</button>`).join("")}
+    </div></div>`;
   }
   return out;
 }
 
-function renderChat() {
-  const bot = bots.find((b) => b.id === activeId);
-  $("bot-pill").innerHTML = `${avatar(bot.color, bot.shape, 30)}<span>${bot.name}</span>`;
-  $("input").placeholder = `Message ${bot.name}`;
-  $("messages").innerHTML = bot.messages.map(renderMessage).join("");
-  scrollToBottom();
+function renderChat(keepScroll) {
+  const b = bot(activeId);
+  if (!b) { $("messages").innerHTML = ""; return; }
+  const el = $("messages");
+  const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+  $("bot-pill").innerHTML = `${avatar(b.color, b.shape, 30)}<span>${esc(b.name)}</span><span class="harness">${esc(b.harness)}</span>`;
+  $("input").placeholder = `Message ${b.name}`;
+  const list = messages[b.id] || [];
+  let html = list.map((m, i) => renderMessage(m, list[i - 1])).join("");
+  if (b.working) {
+    const draft = drafts[b.id];
+    if (draft) html += `<div class="msg-row bot"><div class="bubble">${md(draft)}</div></div>`;
+    html += `<div class="msg-row bot"><div class="bubble typing"><span></span><span></span><span></span>
+      <em class="status">${esc(b.status || "Working")}</em><button class="stop" id="stop">Stop</button></div></div>`;
+  }
+  el.innerHTML = html;
+  if (!keepScroll || atBottom) scrollToBottom(); else updateScrollBtn();
 }
 
 function scrollToBottom() {
@@ -125,36 +159,100 @@ function updateScrollBtn() {
   $("scroll-down").classList.toggle("show", el.scrollHeight - el.scrollTop - el.clientHeight > 80);
 }
 
-function reply(bot, text) {
-  bot.messages.push({ from: "user", html: esc(text) });
-  bot.messages.push({ from: "bot", typing: true });
+async function open(id) {
+  if (!bot(id)) id = primary()?.id;
+  if (!id) return;
+  activeId = id;
+  localStorage.setItem("activeBot", id);
+  if (!messages[id]) messages[id] = await api("GET", `/api/bots/${id}/messages`);
+  markRead();
   render();
-  setTimeout(() => {
-    bot.messages.pop();
-    bot.messages.push({ from: "bot", html: `<p>Got it. This is a UI prototype, so there's no agent behind me yet. You said: “${esc(text)}”.</p>` });
-    render();
-  }, 900);
 }
 
-function render() { renderSidebar(); renderChat(); }
+function markRead() {
+  const b = bot(activeId);
+  if (b?.unread && document.hasFocus()) {
+    b.unread = false;
+    api("POST", `/api/bots/${b.id}/read`).catch(() => {});
+  }
+}
+
+async function sendText(text, answer) {
+  const b = bot(activeId);
+  if (!b || !text) return;
+  try {
+    await api("POST", `/api/bots/${b.id}/messages`, { text, answer });
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+function render(keepScroll) { renderSidebar(); renderChat(keepScroll); }
+
+// Live updates
+function connect() {
+  const es = new EventSource("/api/events");
+  es.onmessage = (ev) => {
+    const e = JSON.parse(ev.data);
+    if (e.type === "resync") return void load(true);
+    if (e.type === "message") {
+      const list = messages[e.message.botId];
+      if (list && !list.some((m) => m.id === e.message.id)) list.push(e.message);
+      if (e.message.role === "bot") delete drafts[e.message.botId];
+      if (e.bot) upsertBot(e.bot);
+      if (e.message.botId === activeId) markRead();
+    } else if (e.type === "bot") {
+      upsertBot(e.bot);
+    } else if (e.type === "botDeleted") {
+      bots = bots.filter((b) => b.id !== e.botId);
+      if (activeId === e.botId) return void open(primary()?.id);
+    } else if (e.type === "draft") {
+      drafts[e.botId] = e.text;
+    } else if (e.type === "status") {
+      const b = bot(e.botId);
+      if (b) { b.working = e.working; b.status = e.status; }
+      if (!e.working) delete drafts[e.botId];
+    }
+    render(true);
+  };
+  // Resync after a reconnect, in case events were missed.
+  let opened = false;
+  es.onopen = () => { if (opened) load(true); opened = true; };
+}
+
+async function load(refresh) {
+  const state = await api("GET", "/api/state");
+  me = state.me;
+  harnesses = state.harnesses;
+  defaultHarness = state.defaultHarness;
+  bots = state.bots;
+  if (refresh) for (const id of Object.keys(messages)) messages[id] = await api("GET", `/api/bots/${id}/messages`);
+  await open(activeId);
+}
 
 // Events
 $("bot-list").addEventListener("click", (e) => {
   const row = e.target.closest(".bot-row");
-  if (!row) return;
-  activeId = row.dataset.id;
-  bots.find((b) => b.id === activeId).unread = false;
-  render();
+  if (row) open(row.dataset.id);
 });
+$("primary-bot").addEventListener("click", () => open(primary()?.id));
 
 $("messages").addEventListener("click", (e) => {
+  if (e.target.closest("#stop")) return void api("POST", `/api/bots/${activeId}/stop`).catch(() => {});
+  const copy = e.target.closest('[data-act="copy"]');
+  if (copy) {
+    const m = messages[activeId]?.find((x) => x.id === +copy.closest(".msg-row").dataset.id);
+    if (m) navigator.clipboard.writeText(m.text);
+    return;
+  }
   const opt = e.target.closest(".option");
   if (!opt) return;
-  const bot = bots.find((b) => b.id === activeId);
-  const q = bot.messages[+opt.closest(".question").dataset.i].question;
-  if (q.picked != null) return;
-  q.picked = +opt.dataset.k;
-  reply(bot, q.options[q.picked]);
+  const card = opt.closest(".question");
+  const m = messages[activeId]?.find((x) => x.id === +card.dataset.id);
+  if (!m || m.question.picked != null) return;
+  m.question.picked = +opt.dataset.k;
+  render(true);
+  sendText(m.question.options[m.question.picked], { messageId: m.id, option: m.question.picked });
 });
 
 $("composer").addEventListener("submit", (e) => {
@@ -162,9 +260,49 @@ $("composer").addEventListener("submit", (e) => {
   const text = $("input").value.trim();
   if (!text) return;
   $("input").value = "";
-  reply(bots.find((b) => b.id === activeId), text);
+  sendText(text);
 });
 
+$("new-btn").addEventListener("click", async () => {
+  const name = prompt("Name your new Bot");
+  if (!name?.trim()) return;
+  let harness = defaultHarness;
+  if (harnesses.length > 1) {
+    harness = prompt(`Which agent runs it? (${harnesses.join(", ")})`, defaultHarness)?.trim();
+    if (!harness) return;
+  }
+  try {
+    const b = await api("POST", "/api/bots", { name, harness });
+    upsertBot(b);
+    open(b.id);
+  } catch (err) { alert(err.message); }
+});
+
+// Bot details: click the name at the top of the chat.
+$("bot-pill").addEventListener("click", async () => {
+  const b = bot(activeId);
+  if (!b) return;
+  const choice = prompt(
+    `${b.name} runs on ${b.harness}${b.model ? ` (${b.model})` : ""}.\n\nType a new name to rename it, or one of:\n` +
+    `  ${b.hidden ? "show" : "hide"}\n  agent <${harnesses.join("|")}>\n  model <name>  (empty = default)\n${b.primary ? "" : "  delete\n"}`,
+  )?.trim();
+  if (!choice) return;
+  const [cmd, ...rest] = choice.split(/\s+/);
+  const arg = rest.join(" ");
+  try {
+    if (cmd === "delete" && !b.primary) {
+      if (confirm(`Delete ${b.name}? This erases its chat, memory, and routines. Files on the computer stay.`)) {
+        await api("DELETE", `/api/bots/${b.id}`);
+      }
+    } else if (cmd === "hide" || cmd === "show") upsertBot(await api("PATCH", `/api/bots/${b.id}`, { hidden: cmd === "hide" }));
+    else if (cmd === "agent") upsertBot(await api("PATCH", `/api/bots/${b.id}`, { harness: arg }));
+    else if (cmd === "model") upsertBot(await api("PATCH", `/api/bots/${b.id}`, { model: arg || null }));
+    else upsertBot(await api("PATCH", `/api/bots/${b.id}`, { name: choice }));
+    render(true);
+  } catch (err) { alert(err.message); }
+});
+
+$("hidden-btn").addEventListener("click", () => { showHidden = !showHidden; renderSidebar(); });
 $("search-btn").addEventListener("click", () => {
   const s = $("search");
   s.hidden = !s.hidden;
@@ -173,5 +311,6 @@ $("search-btn").addEventListener("click", () => {
 $("search").addEventListener("input", (e) => { filter = e.target.value; renderSidebar(); });
 $("messages").addEventListener("scroll", updateScrollBtn);
 $("scroll-down").addEventListener("click", () => $("messages").scrollTo({ top: $("messages").scrollHeight, behavior: "smooth" }));
+window.addEventListener("focus", () => { markRead(); renderSidebar(); });
 
-render();
+load().then(connect).catch((err) => { $("messages").innerHTML = `<div class="timestamp">Can't reach the server: ${esc(err.message)}</div>`; });
