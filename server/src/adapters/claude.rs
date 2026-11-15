@@ -64,12 +64,17 @@ impl Adapter for Claude {
         }
     }
 
-    /// Claude Code has no command to list models, so these are its aliases.
-    /// Each one always points to the latest model of that family.
+    /// Claude Code has no command to list models, so this is the current lineup.
+    /// Update it when Anthropic ships new models.
     fn models(&self) -> Vec<ModelOption> {
         let efforts: Vec<String> = ["low", "medium", "high", "xhigh", "max"].map(String::from).into();
-        [("fable", "Fable"), ("opus", "Opus"), ("sonnet", "Sonnet"), ("haiku", "Haiku")]
-            .map(|(id, label)| ModelOption { id: id.into(), label: label.into(), efforts: efforts.clone() })
-            .into()
+        [
+            ("claude-fable-5-2", "Fable 5.2", "fable"),
+            ("claude-opus-5-5", "Opus 5.5", "opus"),
+            ("claude-sonnet-5-5", "Sonnet 5.5", "sonnet"),
+            ("claude-haiku-5-5", "Haiku 5.5", "haiku"),
+        ]
+        .map(|(id, label, alias)| ModelOption { id: id.into(), label: label.into(), efforts: efforts.clone(), aliases: vec![alias.into()] })
+        .into()
     }
 }

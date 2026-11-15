@@ -244,8 +244,10 @@ async function renderModelBar() {
 
   const all = [...new Set(list.flatMap((m) => m.efforts))];
   const models = [{ id: "", label: "Default model", efforts: all }, ...list];
-  if (b.model && !list.some((m) => m.id === b.model)) models.push({ id: b.model, label: b.model, efforts: all });
-  const current = models.find((m) => m.id === (b.model || ""));
+  // A Bot saved with an alias (e.g. "opus") shows as its exact model.
+  const isCurrent = (m) => m.id === (b.model || "") || (b.model && m.aliases?.includes(b.model));
+  if (b.model && !list.some(isCurrent)) models.push({ id: b.model, label: b.model, efforts: all });
+  const current = models.find(isCurrent);
   $("model-select").innerHTML = models.map((m) =>
     `<option value="${esc(m.id)}" ${m === current ? "selected" : ""}>${esc(m.label)}</option>`).join("");
   $("effort-select").innerHTML = ["", ...current.efforts].map((e) =>

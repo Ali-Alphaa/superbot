@@ -57,6 +57,9 @@ pub struct ModelOption {
     pub label: String,
     /// Efforts this model accepts. Empty = no effort setting.
     pub efforts: Vec<String>,
+    /// Other names the harness accepts for this model (e.g. "opus").
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub aliases: Vec<String>,
 }
 
 /// Model lists, cached for 10 minutes per harness (listing can take a second).
