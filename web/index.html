@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Open Grok Bot</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="sidebar-top">
+        <button class="icon-btn" id="search-btn" title="Search">
+          <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/></svg>
+        </button>
+        <button class="icon-btn" id="new-btn" title="New Bot">
+          <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+      </div>
+      <input class="search" id="search" placeholder="Search Bots" hidden />
+
+      <button class="primary-bot" id="primary-bot"></button>
+
+      <nav class="bot-list" id="bot-list"></nav>
+
+      <button class="hidden-bots">
+        <span>Hidden Bots</span><span id="hidden-count">7</span>
+      </button>
+
+      <div class="sidebar-bottom">
+        <div class="me">
+          <div class="me-avatar">D</div>
+          <span>David Ondrej</span>
+        </div>
+        <button class="icon-btn" title="Apps">
+          <svg viewBox="0 0 24 24"><rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><path d="M17 14v6M14 17h6"/></svg>
+        </button>
+      </div>
+    </aside>
+
+    <main class="chat">
+      <header class="chat-header">
+        <div class="bot-pill" id="bot-pill"></div>
+        <button class="share-btn">Share</button>
+      </header>
+
+      <section class="messages" id="messages"></section>
+
+      <button class="scroll-down" id="scroll-down" title="Scroll to bottom">
+        <svg viewBox="0 0 24 24"><path d="M12 5v14M6 13l6 6 6-6"/></svg>
+      </button>
+
+      <form class="composer" id="composer">
+        <button type="button" class="composer-plus" title="Attach">
+          <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+        <input id="input" autocomplete="off" />
+        <button type="button" class="composer-mic" title="Voice note">
+          <svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg>
+        </button>
+        <button type="submit" class="composer-voice" title="Send">
+          <svg viewBox="0 0 24 24"><path d="M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4"/></svg>
+        </button>
+      </form>
+    </main>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>
