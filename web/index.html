@@ -64,6 +64,29 @@
       </form>
     </main>
   </div>
+  <div class="modal-backdrop" id="nb" hidden>
+    <form class="modal" id="nb-form" autocomplete="off">
+      <div class="modal-head">
+        <h3>New Bot</h3>
+        <button type="button" class="icon-btn modal-close" id="nb-close" title="Close">
+          <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </div>
+      <div class="nb-preview" id="nb-preview"></div>
+      <label class="nb-label" for="nb-name">Name</label>
+      <input class="nb-input" id="nb-name" maxlength="60" placeholder="e.g. Inbox Triage" />
+      <div class="nb-label">Look</div>
+      <div class="nb-shapes" id="nb-shapes"></div>
+      <div class="nb-colors" id="nb-colors"></div>
+      <div class="nb-label">Runs on</div>
+      <div class="nb-seg" id="nb-harness"></div>
+      <div class="nb-error" id="nb-error" hidden></div>
+      <div class="nb-actions">
+        <button type="button" class="nb-btn" id="nb-cancel">Cancel</button>
+        <button type="submit" class="nb-btn primary" id="nb-create">Create Bot</button>
+      </div>
+    </form>
+  </div>
   <script src="app.js"></script>
 </body>
 </html>

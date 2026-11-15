@@ -268,19 +268,63 @@ $("composer").addEventListener("submit", (e) => {
   sendText(text);
 });
 
-$("new-btn").addEventListener("click", async () => {
-  const name = prompt("Name your new Bot");
-  if (!name?.trim()) return;
-  let harness = defaultHarness;
-  if (harnesses.length > 1) {
-    harness = prompt(`Which agent runs it? (${harnesses.join(", ")})`, defaultHarness)?.trim();
-    if (!harness) return;
-  }
+// New Bot window
+const COLORS = ["#4cc06a", "#3b7ff0", "#f0a243", "#ef4b4b", "#8b5cf6", "#f2f2f2", "#22b8cf", "#e64980"];
+const HARNESS_NAMES = { claude: "Claude Code", codex: "Codex", pi: "Pi" };
+const nb = { color: COLORS[0], shape: "round", harness: "claude" };
+const pickOne = (a) => a[Math.floor(Math.random() * a.length)];
+
+function renderNewBot() {
+  $("nb-preview").innerHTML = avatar(nb.color, nb.shape, 104);
+  $("nb-shapes").innerHTML = Object.keys(SHAPES).map((s) =>
+    `<button type="button" class="nb-shape ${s === nb.shape ? "on" : ""}" data-shape="${s}" title="${s}">${avatar(nb.color, s, 38)}</button>`).join("");
+  $("nb-colors").innerHTML = COLORS.map((c) =>
+    `<button type="button" class="nb-color ${c === nb.color ? "on" : ""}" data-color="${c}" style="background:${c}" title="${c}"></button>`).join("");
+  const list = harnesses.length ? harnesses : Object.keys(HARNESS_NAMES);
+  $("nb-harness").innerHTML = list.map((h) =>
+    `<button type="button" class="${h === nb.harness ? "on" : ""}" data-harness="${h}">${HARNESS_NAMES[h] || h}</button>`).join("");
+  $("nb-create").disabled = !$("nb-name").value.trim();
+}
+
+function openNewBot() {
+  Object.assign(nb, { color: pickOne(COLORS), shape: pickOne(Object.keys(SHAPES)), harness: defaultHarness });
+  $("nb-name").value = "";
+  $("nb-error").hidden = true;
+  renderNewBot();
+  $("nb").hidden = false;
+  $("nb-name").focus();
+}
+const closeNewBot = () => { $("nb").hidden = true; };
+
+$("new-btn").addEventListener("click", openNewBot);
+$("nb-close").addEventListener("click", closeNewBot);
+$("nb-cancel").addEventListener("click", closeNewBot);
+$("nb").addEventListener("mousedown", (e) => { if (e.target === $("nb")) closeNewBot(); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("nb").hidden) closeNewBot(); });
+$("nb-name").addEventListener("input", () => { $("nb-create").disabled = !$("nb-name").value.trim(); });
+$("nb-form").addEventListener("click", (e) => {
+  const t = e.target.closest("[data-shape], [data-color], [data-harness]");
+  if (!t) return;
+  if (t.dataset.shape) nb.shape = t.dataset.shape;
+  if (t.dataset.color) nb.color = t.dataset.color;
+  if (t.dataset.harness) nb.harness = t.dataset.harness;
+  renderNewBot();
+});
+$("nb-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const name = $("nb-name").value.trim();
+  if (!name) return;
+  $("nb-create").disabled = true;
   try {
-    const b = await api("POST", "/api/bots", { name, harness });
+    const b = await api("POST", "/api/bots", { name, color: nb.color, shape: nb.shape, harness: nb.harness });
     upsertBot(b);
+    closeNewBot();
     open(b.id);
-  } catch (err) { alert(err.message); }
+  } catch (err) {
+    $("nb-error").textContent = err.message;
+    $("nb-error").hidden = false;
+    $("nb-create").disabled = false;
+  }
 });
 
 // Bot details: click the name at the top of the chat.
