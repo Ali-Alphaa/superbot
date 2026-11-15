@@ -34,6 +34,8 @@ pub struct RunInput {
     pub session_id: Option<String>,
     pub cwd: PathBuf,
     pub model: Option<String>,
+    /// Reasoning effort, in the harness's own words (e.g. "high").
+    pub effort: Option<String>,
     pub env: HashMap<String, String>,
     /// A private folder for this Bot's harness files.
     pub state_dir: PathBuf,
@@ -45,6 +47,44 @@ pub trait Adapter: Send {
     fn args(&mut self, input: &RunInput, out: &mut Vec<AgentEvent>) -> Vec<String>;
     /// Map one JSON line from the harness to zero or more events.
     fn on_event(&mut self, e: &Value, out: &mut Vec<AgentEvent>);
+    /// Models this harness can run here, with their reasoning efforts. Blocking.
+    fn models(&self) -> Vec<ModelOption>;
+}
+
+#[derive(Clone, serde::Serialize)]
+pub struct ModelOption {
+    pub id: String,
+    pub label: String,
+    /// Efforts this model accepts. Empty = no effort setting.
+    pub efforts: Vec<String>,
+}
+
+/// Model lists, cached for 10 minutes per harness (listing can take a second).
+pub fn models(name: &str) -> Vec<ModelOption> {
+    use std::sync::Mutex;
+    use std::time::{Duration, Instant};
+    static CACHE: Mutex<Option<HashMap<String, (Instant, Vec<ModelOption>)>>> = Mutex::new(None);
+    if let Some((at, list)) = CACHE.lock().unwrap().get_or_insert_default().get(name) {
+        if at.elapsed() < Duration::from_secs(600) && !list.is_empty() {
+            return list.clone();
+        }
+    }
+    let list = get(name).map(|a| a.models()).unwrap_or_default();
+    CACHE.lock().unwrap().get_or_insert_default().insert(name.into(), (Instant::now(), list.clone()));
+    list
+}
+
+/// Runs a command and returns its stdout, or "" if it fails.
+pub fn output(bin: &str, args: &[&str]) -> String {
+    std::process::Command::new(bin)
+        .args(args)
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+        .unwrap_or_default()
 }
 
 /// To add a harness: write one adapter file and list it here.

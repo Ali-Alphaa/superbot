@@ -96,6 +96,7 @@ async fn main() {
     let api = Router::new()
         .route("/state", get(state))
         .route("/events", get(events))
+        .route("/harnesses/{name}/models", get(list_models))
         .route("/bots", get(list_bots).post(create_bot))
         .route("/bots/{id}", patch(update_bot).delete(delete_bot))
         .route("/bots/{id}/messages", get(list_messages).post(send_message))
@@ -243,6 +244,15 @@ async fn state(State(app): State<AppState>) -> Json<Value> {
     }))
 }
 
+/// Models and reasoning efforts the harness offers on this server.
+async fn list_models(Path(name): Path<String>) -> Res {
+    if adapters::get(&name).is_none() {
+        return Err(not_found("Harness"));
+    }
+    let list = tokio::task::spawn_blocking(move || adapters::models(&name)).await.unwrap_or_default();
+    Ok(Json(json!(list)))
+}
+
 async fn list_bots(State(app): State<AppState>) -> Json<Value> {
     Json(app.db.bots().iter().map(|b| app.bot_view(b)).collect())
 }
@@ -268,6 +278,16 @@ fn bot_patch(v: &Value) -> Res<BotPatch> {
     match &v["model"] {
         Value::Null if v.get("model").is_some() => p.model = Some(None),
         Value::String(m) => p.model = Some(Some(m.trim().to_string()).filter(|m| !m.is_empty())),
+        _ => {}
+    }
+    // Effort words like "high" or "xhigh". Null = the harness default.
+    match &v["effort"] {
+        Value::Null if v.get("effort").is_some() => p.effort = Some(None),
+        Value::String(e) if e.is_empty() => p.effort = Some(None),
+        Value::String(e) if e.len() <= 20 && e.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') => {
+            p.effort = Some(Some(e.clone()))
+        }
+        Value::String(_) => return Err(bad("Invalid effort")),
         _ => {}
     }
     if let Some(h) = v.get("harness") {

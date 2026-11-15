@@ -224,7 +224,50 @@ async function sendText(text, answer) {
   }
 }
 
-function render(keepScroll) { renderSidebar(); renderChat(keepScroll); }
+function render(keepScroll) { renderSidebar(); renderChat(keepScroll); renderModelBar(); }
+
+// Model and effort picker above the input. Saved on the Bot, so each Bot keeps its own.
+const modelLists = {}; // harness -> Promise<[{id, label, efforts}]>
+let modelBarKey = "";
+const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+
+async function renderModelBar() {
+  const b = bot(activeId);
+  if (!b) return;
+  modelLists[b.harness] ??= api("GET", `/api/harnesses/${b.harness}/models`).catch(() => []);
+  const list = await modelLists[b.harness];
+  const key = [b.id, b.harness, b.model, b.effort, list.length].join("|");
+  if (bot(activeId) !== b || key === modelBarKey) return;
+  modelBarKey = key;
+
+  const all = [...new Set(list.flatMap((m) => m.efforts))];
+  const models = [{ id: "", label: "Default model", efforts: all }, ...list];
+  if (b.model && !list.some((m) => m.id === b.model)) models.push({ id: b.model, label: b.model, efforts: all });
+  const current = models.find((m) => m.id === (b.model || ""));
+  $("model-select").innerHTML = models.map((m) =>
+    `<option value="${esc(m.id)}" ${m === current ? "selected" : ""}>${esc(m.label)}</option>`).join("");
+  $("effort-select").innerHTML = ["", ...current.efforts].map((e) =>
+    `<option value="${esc(e)}" ${e === (b.effort || "") ? "selected" : ""}>${e ? cap(e) : "Default effort"}</option>`).join("");
+  $("effort-select").hidden = !current.efforts.length;
+  $("model-bar").hidden = false;
+}
+
+async function saveModel(patch) {
+  const b = bot(activeId);
+  if (!b) return;
+  try { upsertBot(await api("PATCH", `/api/bots/${b.id}`, patch)); } catch (err) { alert(err.message); }
+  renderModelBar();
+}
+
+$("model-select").addEventListener("change", async (e) => {
+  const b = bot(activeId);
+  const list = await modelLists[b.harness];
+  const m = list.find((x) => x.id === e.target.value);
+  // Keep the effort only if the new model supports it.
+  const effort = m && b.effort && !m.efforts.includes(b.effort) ? null : b.effort;
+  saveModel({ model: e.target.value || null, effort });
+});
+$("effort-select").addEventListener("change", (e) => saveModel({ effort: e.target.value || null }));
 
 // Live updates
 function connect() {

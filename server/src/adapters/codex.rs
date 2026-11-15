@@ -2,7 +2,7 @@
 //! Limitation: Codex fixes its instructions when a session starts, so later memory
 //! changes reach it only through its memory file, not the system prompt.
 
-use super::{short, str_of, Adapter, AgentEvent, RunInput};
+use super::{output, short, str_of, Adapter, AgentEvent, ModelOption, RunInput};
 use serde_json::Value;
 
 pub struct Codex;
@@ -21,6 +21,9 @@ impl Adapter for Codex {
         a.push(format!("developer_instructions={}", Value::String(input.system.clone())));
         if let Some(m) = &input.model {
             a.extend(["-m".into(), m.clone()]);
+        }
+        if let Some(e) = &input.effort {
+            a.extend(["-c".into(), format!("model_reasoning_effort={}", Value::String(e.clone()))]);
         }
         a.push("--".into());
         if let Some(id) = &input.session_id {
@@ -54,6 +57,27 @@ impl Adapter for Codex {
             }
             _ => {}
         }
+    }
+
+    /// From `codex debug models`: the models this login can use, and their efforts.
+    fn models(&self) -> Vec<ModelOption> {
+        let v: Value = serde_json::from_str(&output("codex", &["debug", "models"])).unwrap_or_default();
+        v["models"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|m| str_of(m, "visibility") == "list")
+            .map(|m| ModelOption {
+                id: str_of(m, "slug").into(),
+                label: m["display_name"].as_str().unwrap_or(str_of(m, "slug")).into(),
+                efforts: m["supported_reasoning_levels"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|l| l["effort"].as_str().map(String::from))
+                    .collect(),
+            })
+            .collect()
     }
 }
 

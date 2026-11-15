@@ -14,6 +14,7 @@ pub struct Bot {
     pub shape: String,
     pub harness: String,
     pub model: Option<String>,
+    pub effort: Option<String>,
     #[serde(skip)]
     pub session_id: Option<String>,
     pub primary: bool,
@@ -62,6 +63,7 @@ pub struct BotPatch {
     pub shape: Option<String>,
     pub harness: Option<String>,
     pub model: Option<Option<String>>,
+    pub effort: Option<Option<String>>,
     pub session_id: Option<Option<String>>,
     pub hidden: Option<bool>,
     pub unread: Option<bool>,
@@ -81,6 +83,7 @@ fn bot_row(r: &Row) -> rusqlite::Result<Bot> {
         shape: r.get("shape")?,
         harness: r.get("harness")?,
         model: r.get("model")?,
+        effort: r.get("effort")?,
         session_id: r.get("session_id")?,
         primary: r.get("primary_bot")?,
         hidden: r.get("hidden")?,
@@ -160,6 +163,7 @@ impl Db {
         )?;
         // Added after the first release; fails harmlessly if it already exists.
         let _ = c.execute("ALTER TABLE messages ADD COLUMN from_bot TEXT", []);
+        let _ = c.execute("ALTER TABLE bots ADD COLUMN effort TEXT", []);
         Ok(Db(Mutex::new(c)))
     }
 
@@ -200,6 +204,7 @@ impl Db {
         if let Some(v) = p.shape { set("shape", &v) }
         if let Some(v) = p.harness { set("harness", &v) }
         if let Some(v) = p.model { set("model", &v) }
+        if let Some(v) = p.effort { set("effort", &v) }
         if let Some(v) = p.session_id { set("session_id", &v) }
         if let Some(v) = p.hidden { set("hidden", &v) }
         if let Some(v) = p.unread { set("unread", &v) }

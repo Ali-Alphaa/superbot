@@ -14,6 +14,7 @@ One Rust binary, `botd`. It serves the web app, stores everything in SQLite, and
 - **The computer** is `WORKSPACE_DIR`, shared by all Bots, like Grok Bot's shared VM.
 - **Routines** are cron schedules. Bots create them with the `botctl` CLI, which works from any harness's shell.
 - **Bot to Bot**: a Bot runs `botctl ask "<Bot>" "<message>"`. The other Bot answers in its own chat and the reply prints back. If it takes over 9 minutes, the reply arrives later as a new message.
+- **Model and effort** are saved per Bot. The web app shows a faint picker above the input. Unset means the harness default.
 - **Choice cards**: a reply ending in a ` ```question ` JSON block becomes a multiple-choice card.
 - **Restarts**: queued messages run after a restart. A task that was running is reported as interrupted, not re-run, so it can't repeat an action like sending an email.
 
@@ -60,7 +61,8 @@ All JSON. Browser auth: HTTP Basic with `AUTH_PASSWORD`.
 - `GET /api/state`: user name, installed harnesses, all Bots
 - `GET /api/events`: SSE stream (`message`, `draft`, `status`, `bot`, `botDeleted`, `resync`)
 - `POST /api/bots` `{name, harness?, model?, color?, shape?}`
-- `PATCH /api/bots/:id` `{name?, hidden?, harness?, model?}`, `DELETE /api/bots/:id`
+- `PATCH /api/bots/:id` `{name?, hidden?, harness?, model?, effort?}`, `DELETE /api/bots/:id`
+- `GET /api/harnesses/:name/models`: models and reasoning efforts the harness offers (Claude Code: aliases; Codex: `codex debug models`; Pi: `pi --list-models`)
 - `GET|POST /api/bots/:id/messages` `{text, answer?: {messageId, option}}`
 - `POST /api/bots/:id/read`, `POST /api/bots/:id/stop`
 - `GET|POST /api/bots/:id/routines` `{name, cron, instruction}`

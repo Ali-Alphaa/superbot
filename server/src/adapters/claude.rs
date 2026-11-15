@@ -1,7 +1,7 @@
 //! Claude Code CLI: `claude -p --output-format stream-json`.
 //! Resumes with `--resume <session id>`. The system prompt is applied fresh every run.
 
-use super::{describe, new_uuid, str_of, Adapter, AgentEvent, RunInput};
+use super::{describe, new_uuid, str_of, Adapter, AgentEvent, ModelOption, RunInput};
 use serde_json::Value;
 
 #[derive(Default)]
@@ -26,6 +26,9 @@ impl Adapter for Claude {
         a.extend([if input.session_id.is_some() { "--resume" } else { "--session-id" }.into(), self.id.clone()]);
         if let Some(m) = &input.model {
             a.extend(["--model".into(), m.clone()]);
+        }
+        if let Some(e) = &input.effort {
+            a.extend(["--effort".into(), e.clone()]);
         }
         a.extend(["--".into(), input.prompt.clone()]);
         a
@@ -59,5 +62,14 @@ impl Adapter for Claude {
             }
             _ => {}
         }
+    }
+
+    /// Claude Code has no command to list models, so these are its aliases.
+    /// Each one always points to the latest model of that family.
+    fn models(&self) -> Vec<ModelOption> {
+        let efforts: Vec<String> = ["low", "medium", "high", "xhigh", "max"].map(String::from).into();
+        [("fable", "Fable"), ("opus", "Opus"), ("sonnet", "Sonnet"), ("haiku", "Haiku")]
+            .map(|(id, label)| ModelOption { id: id.into(), label: label.into(), efforts: efforts.clone() })
+            .into()
     }
 }

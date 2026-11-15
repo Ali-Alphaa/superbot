@@ -68,7 +68,7 @@ impl App {
             if t.is_empty() { m.question.and_then(|q| q["title"].as_str().map(String::from)).unwrap_or_default() } else { t }
         });
         let mut v = json!({
-            "id": b.id, "name": b.name, "color": b.color, "shape": b.shape, "harness": b.harness, "model": b.model,
+            "id": b.id, "name": b.name, "color": b.color, "shape": b.shape, "harness": b.harness, "model": b.model, "effort": b.effort,
             "primary": b.primary, "hidden": b.hidden, "unread": b.unread, "preview": preview.unwrap_or_default(), "working": false,
         });
         if let Some(run) = self.state().get(&b.id).and_then(|s| s.run.as_ref()) {
@@ -191,6 +191,7 @@ impl App {
                 session_id: bot.session_id.clone(),
                 cwd: self.cfg.workspace.clone(),
                 model: bot.model.clone(),
+                effort: bot.effort.clone(),
                 env,
                 state_dir: self.bot_dir(&bot.id),
             };
