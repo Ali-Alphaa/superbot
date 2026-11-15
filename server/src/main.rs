@@ -102,7 +102,8 @@ async fn main() {
         .route("/bots/{id}/read", post(mark_read))
         .route("/bots/{id}/stop", post(stop_bot))
         .route("/bots/{id}/routines", get(list_routines).post(create_routine))
-        .route("/routines/{id}", patch(update_routine).delete(delete_routine));
+        .route("/routines/{id}", patch(update_routine).delete(delete_routine))
+        .route("/ask", post(ask));
     let router = Router::new()
         .nest("/api", api)
         .fallback(get(web))
@@ -350,6 +351,28 @@ async fn send_message(State(app): State<AppState>, Path(id): Path<String>, Json(
     app.push_message(&msg);
     app.enqueue(msg.clone());
     Ok((StatusCode::ACCEPTED, Json(json!(msg))))
+}
+
+// Bot to Bot: `botctl ask`. Waits for the reply and returns it as plain text.
+
+async fn ask(State(app): State<AppState>, Json(v): Json<Value>) -> Result<String, ApiError> {
+    let from = v["from"].as_str().and_then(|id| app.db.bot(id)).ok_or_else(|| bad("Unknown asking Bot (BOT_ID)"))?;
+    let to_key = v["to"].as_str().map(str::trim).unwrap_or("");
+    let bots = app.db.bots();
+    let to = bots
+        .iter()
+        .find(|b| b.id == to_key)
+        .or_else(|| bots.iter().find(|b| b.name.eq_ignore_ascii_case(to_key)))
+        .ok_or_else(|| bad(format!("No Bot named \"{to_key}\". Run `botctl bots` to list them.")))?;
+    if to.id == from.id {
+        return Err(bad("You can't ask yourself"));
+    }
+    let text = v["text"].as_str().map(str::trim).filter(|t| !t.is_empty()).ok_or_else(|| bad("Message is required"))?;
+    let wait = Duration::from_secs(9 * 60); // under the 10 minute max most harnesses allow a command
+    Ok(match app.ask(&from, to, text, wait).await {
+        Some(reply) => reply,
+        None => format!("{} is still working on it. Their reply will arrive later as a new message.", to.name),
+    })
 }
 
 // Routines

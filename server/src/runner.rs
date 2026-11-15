@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use tokio::sync::{broadcast, watch};
+use tokio::sync::{broadcast, oneshot, watch};
 
 pub struct Config {
     pub data_dir: PathBuf,
@@ -42,12 +42,14 @@ pub struct App {
     /// Every live update for the web app, as JSON text.
     pub tx: broadcast::Sender<String>,
     bots: Mutex<HashMap<String, BotState>>,
+    /// Bots waiting on `botctl ask`, by the asked message's id.
+    waiters: Mutex<HashMap<i64, oneshot::Sender<String>>>,
     closing: AtomicBool,
 }
 
 impl App {
     pub fn new(db: Db, cfg: Config) -> Arc<App> {
-        Arc::new(App { db, cfg, tx: broadcast::channel(1024).0, bots: Mutex::default(), closing: AtomicBool::new(false) })
+        Arc::new(App { db, cfg, tx: broadcast::channel(1024).0, bots: Mutex::default(), waiters: Mutex::default(), closing: AtomicBool::new(false) })
     }
 
     pub fn send(&self, v: Value) {
@@ -136,6 +138,7 @@ impl App {
                 m
             };
             let Some(msg) = next else { break };
+            let before = self.db.last_id();
             if let Some(bot) = self.db.bot(&bot_id) {
                 self.run_one(bot, &msg).await;
             }
@@ -143,6 +146,9 @@ impl App {
                 return; // left "running": the next start reports it
             }
             self.db.set_status(msg.id, "done");
+            if msg.role == "peer" {
+                self.answer_peer(&msg, before);
+            }
         }
         self.send(json!({ "type": "status", "botId": bot_id, "working": false }));
     }
@@ -153,7 +159,13 @@ impl App {
         }
         self.init_bot_files(&bot);
         self.db.set_status(msg.id, "running");
-        let prompt = if msg.role == "routine" { format!("(Scheduled routine) {}", msg.text) } else { msg.text.clone() };
+        let from = || msg.from_bot.as_deref().and_then(|id| self.db.bot(id)).map(|b| format!("{} (id {})", b.name, b.id)).unwrap_or("another Bot".into());
+        let prompt = match msg.role.as_str() {
+            "routine" => format!("(Scheduled routine) {}", msg.text),
+            "peer" => format!("(Message from {}, another Bot. Your reply goes back to them, not the user.)\n\n{}", from(), msg.text),
+            "reply" => format!("(Reply from {} to what you asked earlier. Tell the user what matters.)\n\n{}", from(), msg.text),
+            _ => msg.text.clone(),
+        };
 
         for attempt in 0..2 {
             let (abort_tx, abort_rx) = watch::channel(None);
@@ -249,6 +261,39 @@ impl App {
         self.state().get_mut(bot_id).and_then(|s| s.run.as_mut()).map(f).unwrap_or_default()
     }
 
+    /// Another Bot asks this one something. Resolves with the reply, or None if it
+    /// takes longer than `wait`; then the reply is delivered to the asker later.
+    pub async fn ask(self: &Arc<Self>, from: &Bot, to: &Bot, text: &str, wait: Duration) -> Option<String> {
+        let msg = self.db.add_message_from(&to.id, "peer", text, None, false, Some("queued"), Some(&from.id));
+        let (tx, rx) = oneshot::channel();
+        self.waiters.lock().unwrap().insert(msg.id, tx);
+        self.push_message(&msg);
+        self.enqueue(msg.clone());
+        let reply = tokio::time::timeout(wait, rx).await.ok().and_then(Result::ok);
+        if reply.is_none() {
+            self.waiters.lock().unwrap().remove(&msg.id);
+        }
+        reply
+    }
+
+    /// Sends the asked Bot's reply to whoever asked: the waiting `botctl ask`,
+    /// or, if it gave up waiting, as a new message in the asker's queue.
+    fn answer_peer(self: &Arc<Self>, msg: &Message, before: i64) {
+        let texts: Vec<String> = self.db.replies_after(&msg.bot_id, before).into_iter().map(|m| m.text).collect();
+        let reply = if texts.is_empty() { "(No reply.)".to_string() } else { texts.join("\n\n") };
+        let waiter = self.waiters.lock().unwrap().remove(&msg.id);
+        let unsent = match waiter {
+            Some(tx) => tx.send(reply).err(),
+            None => Some(reply),
+        };
+        if let Some(reply) = unsent {
+            let Some(asker) = msg.from_bot.as_deref().filter(|id| self.db.bot(id).is_some()) else { return };
+            let m = self.db.add_message_from(asker, "reply", &reply, None, false, Some("queued"), Some(&msg.bot_id));
+            self.push_message(&m);
+            self.enqueue(m);
+        }
+    }
+
     /// Saves one Bot chat bubble. A trailing ```question block becomes a choice card.
     pub fn say(&self, bot_id: &str, text: &str, error: bool) {
         let (text, question) = split_question(text);
@@ -330,7 +375,7 @@ They talk to you in a chat app, like messaging a coworker. Finish work end to en
 </user>
 
 ## Routines
-- For recurring or scheduled work, use the `botctl` command. Run `botctl help` to see how.
+- For recurring or scheduled work, use `{botctl}`. Run `{botctl} help` to see how.
 
 ## Style
 - Reply like a teammate in chat: short, plain English. Markdown is fine.
@@ -343,9 +388,13 @@ They talk to you in a chat app, like messaging a coworker. Finish work end to en
 
 ## Other Bots
 {others}
+- To ask another Bot something or hand it a task, run: {botctl} ask "<Bot name or id>" "<message>". It prints their reply. It can take minutes, so give the command a long timeout (10 minutes). If they take longer, their reply arrives later as a new message.
+- Only loop in another Bot when the user asks or it clearly helps. Never ask the Bot that is asking you.
 
 Current time: {now}."#,
             name = bot.name,
+            // Full path: some harnesses run commands in a login shell that resets PATH.
+            botctl = self.cfg.bin_dir.join("botctl").display(),
             user = self.cfg.user_name,
             ws = self.cfg.workspace.display(),
             mem_path = self.memory_file(&bot.id).display(),

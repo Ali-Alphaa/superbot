@@ -114,6 +114,11 @@ function when(ts) {
 function renderMessage(m, prev) {
   let out = !prev || m.at - prev.at > 30 * 60000 ? `<div class="timestamp">${when(m.at)}</div>` : "";
   if (m.role === "routine") return out + `<div class="timestamp routine">Routine · ${esc(m.text)}</div>`;
+  if (m.role === "peer" || m.role === "reply") {
+    const who = bot(m.fromBot)?.name || "another Bot";
+    const label = m.role === "peer" ? `From ${esc(who)}` : `Reply from ${esc(who)}`;
+    return out + `<div class="msg-row peer"><div class="bubble"><div class="from">${label}</div>${md(m.text)}</div></div>`;
+  }
   if (m.role === "user") return out + `<div class="msg-row user"><div class="bubble">${esc(m.text).replace(/\n/g, "<br>")}</div></div>`;
   if (m.text) {
     out += `<div class="msg-row bot" data-id="${m.id}"><div class="bubble ${m.error ? "error" : ""}">${md(m.text)}</div>${ACTIONS}</div>`;

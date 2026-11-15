@@ -36,6 +36,9 @@ pub struct Message {
     /// "queued" | "running" | "done" for user and routine messages
     #[serde(skip)]
     pub status: Option<String>,
+    /// For "peer" and "reply" messages: the other Bot's id.
+    #[serde(rename = "fromBot")]
+    pub from_bot: Option<String>,
     #[serde(rename = "at")]
     pub created_at: i64,
 }
@@ -96,6 +99,7 @@ fn message_row(r: &Row) -> rusqlite::Result<Message> {
         question: q.and_then(|s| serde_json::from_str(&s).ok()),
         error: r.get("error")?,
         status: r.get("status")?,
+        from_bot: r.get("from_bot")?,
         created_at: r.get("created_at")?,
     })
 }
@@ -154,6 +158,8 @@ impl Db {
               created_at INTEGER NOT NULL
             );",
         )?;
+        // Added after the first release; fails harmlessly if it already exists.
+        let _ = c.execute("ALTER TABLE messages ADD COLUMN from_bot TEXT", []);
         Ok(Db(Mutex::new(c)))
     }
 
@@ -230,15 +236,31 @@ impl Db {
     }
 
     pub fn add_message(&self, bot_id: &str, role: &str, text: &str, question: Option<&Value>, error: bool, status: Option<&str>) -> Message {
+        self.add_message_from(bot_id, role, text, question, error, status, None)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_message_from(&self, bot_id: &str, role: &str, text: &str, question: Option<&Value>, error: bool, status: Option<&str>, from_bot: Option<&str>) -> Message {
         let c = self.c();
         c.execute(
-            "INSERT INTO messages (bot_id, role, text, question, error, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            params![bot_id, role, text, question.map(|q| q.to_string()), error, status, now()],
+            "INSERT INTO messages (bot_id, role, text, question, error, status, from_bot, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            params![bot_id, role, text, question.map(|q| q.to_string()), error, status, from_bot, now()],
         )
         .unwrap();
         let id = c.last_insert_rowid();
         drop(c);
         self.message(id).unwrap()
+    }
+
+    pub fn last_id(&self) -> i64 {
+        self.c().query_row("SELECT COALESCE(MAX(id), 0) FROM messages", [], |r| r.get(0)).unwrap_or(0)
+    }
+
+    /// The Bot's chat bubbles written after message `after`.
+    pub fn replies_after(&self, bot_id: &str, after: i64) -> Vec<Message> {
+        let c = self.c();
+        let mut s = c.prepare("SELECT * FROM messages WHERE bot_id = ? AND id > ? AND role = 'bot' ORDER BY id").unwrap();
+        s.query_map(params![bot_id, after], message_row).unwrap().filter_map(Result::ok).collect()
     }
 
     pub fn set_status(&self, id: i64, status: &str) {

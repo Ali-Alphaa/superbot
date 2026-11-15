@@ -12,13 +12,17 @@ const HELP: &str = r#"botctl: manage your routines (scheduled tasks).
   botctl routine rm <id>                           Delete a routine
   botctl routine pause <id> | resume <id>
   botctl bots                                      List all Bots
+  botctl ask "<Bot name or id>" "<message>"        Ask another Bot; prints its reply
 
 Cron has 5 fields in the server's local time: minute hour day month weekday.
   "30 7 * * *"    every day at 07:30
   "0 9 * * 1-5"   weekdays at 09:00
   "*/15 * * * *"  every 15 minutes
 When a routine fires, you get "<what to do>" as a message and your reply goes to the user's chat.
-Confirm the schedule with the user in plain words."#;
+Confirm the schedule with the user in plain words.
+
+`ask` can take minutes: run it with a long command timeout (10 minutes).
+If the other Bot takes longer, its reply arrives later as a new message."#;
 
 fn api(method: &str, path: &str, body: Option<String>) -> Result<String, String> {
     let (Ok(base), Ok(token)) = (std::env::var("BOT_API"), std::env::var("BOT_TOKEN")) else {
@@ -76,6 +80,10 @@ fn run(args: &[String]) -> Result<String, String> {
             api("PATCH", &format!("/api/routines/{id}"), Some(body)).map(|_| if *cmd == "pause" { "Paused." } else { "Resumed." }.into())
         }
         ["bots"] => api("GET", "/api/bots", None),
+        ["ask", to, message] => {
+            let body = format!("{{\"from\":{},\"to\":{},\"text\":{}}}", json_str(&bot), json_str(to), json_str(message));
+            api("POST", "/api/ask", Some(body))
+        }
         _ => Ok(HELP.into()),
     }
 }
