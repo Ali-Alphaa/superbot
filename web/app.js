@@ -232,12 +232,14 @@ let modelBarKey = "";
 const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 
 async function renderModelBar() {
-  const b = bot(activeId);
-  if (!b) return;
-  modelLists[b.harness] ??= api("GET", `/api/harnesses/${b.harness}/models`).catch(() => []);
-  const list = await modelLists[b.harness];
+  const first = bot(activeId);
+  if (!first) return;
+  modelLists[first.harness] ??= api("GET", `/api/harnesses/${first.harness}/models`).catch(() => []);
+  const list = await modelLists[first.harness];
+  const b = bot(activeId); // re-read: the Bot may have changed while loading
+  if (!b || b.id !== first.id || b.harness !== first.harness) return;
   const key = [b.id, b.harness, b.model, b.effort, list.length].join("|");
-  if (bot(activeId) !== b || key === modelBarKey) return;
+  if (key === modelBarKey) return;
   modelBarKey = key;
 
   const all = [...new Set(list.flatMap((m) => m.efforts))];
