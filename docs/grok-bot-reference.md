@@ -21,6 +21,11 @@ We copy the ideas, never xAI's code, assets, or branding. Our project name is te
 - **Channels**: desktop, web, and mobile apps. Slack and Microsoft Teams. Voice calls and voice notes.
 - **Teams (v1.0)**: shared Team Bots, permissions, proactive work, learning from the whole team.
 
+## Background
+
+- [Observed computer specs](background/grok-bot-computer-specs.md)
+- [Running many Bots on one VM](background/shared-vm-architecture.md)
+
 ## Sources
 
 - https://x.ai/news/introducing-grok-bot
