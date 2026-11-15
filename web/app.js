@@ -204,6 +204,7 @@ async function open(id) {
   if (!messages[id]) messages[id] = await api("GET", `/api/bots/${id}/messages`);
   markRead();
   render();
+  if (details.open) openDetails(); // load the new Bot's routines
 }
 
 function markRead() {
@@ -224,7 +225,12 @@ async function sendText(text, answer) {
   }
 }
 
-function render(keepScroll) { renderSidebar(); renderChat(keepScroll); renderModelBar(); }
+function render(keepScroll) {
+  renderSidebar();
+  renderChat(keepScroll);
+  renderModelBar();
+  if (details.open && document.activeElement?.id !== "d-name") renderDetails();
+}
 
 // Model and effort picker above the input. Saved on the Bot, so each Bot keeps its own.
 const modelLists = {}; // harness -> Promise<[{id, label, efforts}]>
@@ -406,29 +412,101 @@ $("nb-form").addEventListener("submit", async (e) => {
   }
 });
 
-// Bot details: click the name at the top of the chat.
-$("bot-pill").addEventListener("click", async () => {
+// Bot details: a right-hand panel, opened by clicking the name at the top of the chat.
+const ICONS = {
+  clock: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>',
+  job: '<svg viewBox="0 0 24 24"><rect x="4" y="7" width="16" height="12" rx="2"/><path d="M9 7V5.5A1.5 1.5 0 0 1 10.5 4h3A1.5 1.5 0 0 1 15 5.5V7"/></svg>',
+  chevron: '<svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>',
+  trash: '<svg viewBox="0 0 24 24"><path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12"/></svg>',
+};
+const details = { open: false, tab: "activity", routines: [] };
+
+async function openDetails() {
+  details.open = true;
+  details.routines = [];
+  renderDetails();
+  try { details.routines = await api("GET", `/api/bots/${activeId}/routines`); } catch {}
+  renderDetails();
+}
+function closeDetails() { details.open = false; renderDetails(); }
+
+function renderDetails() {
+  const el = $("details");
   const b = bot(activeId);
-  if (!b) return;
-  const choice = prompt(
-    `${b.name} runs on ${b.harness}${b.model ? ` (${b.model})` : ""}.\n\nType a new name to rename it, or one of:\n` +
-    `  ${b.hidden ? "show" : "hide"}\n  agent <${harnesses.join("|")}>\n  model <name>  (empty = default)\n${b.primary ? "" : "  delete\n"}`,
-  )?.trim();
-  if (!choice) return;
-  const [cmd, ...rest] = choice.split(/\s+/);
-  const arg = rest.join(" ");
-  try {
-    if (cmd === "delete" && !b.primary) {
-      if (confirm(`Delete ${b.name}? This erases its chat, memory, and routines. Files on the computer stay.`)) {
-        await api("DELETE", `/api/bots/${b.id}`);
-      }
-    } else if (cmd === "hide" || cmd === "show") upsertBot(await api("PATCH", `/api/bots/${b.id}`, { hidden: cmd === "hide" }));
-    else if (cmd === "agent") upsertBot(await api("PATCH", `/api/bots/${b.id}`, { harness: arg }));
-    else if (cmd === "model") upsertBot(await api("PATCH", `/api/bots/${b.id}`, { model: arg || null }));
-    else upsertBot(await api("PATCH", `/api/bots/${b.id}`, { name: choice }));
-    render(true);
-  } catch (err) { alert(err.message); }
+  el.hidden = !details.open || !b;
+  if (el.hidden) return;
+  const toggle = (on, attrs) => `<button type="button" class="switch ${on ? "on" : ""}" ${attrs}><span></span></button>`;
+  const routines = details.routines.length
+    ? details.routines.map((r) => `<div class="d-item"><div class="d-text"><div>${esc(r.name)}</div><div class="d-sub">${esc(r.cron)}</div></div>
+        ${toggle(r.enabled, `data-routine="${r.id}" title="${r.enabled ? "Pause" : "Resume"}"`)}</div>`).join("")
+    : `<div class="d-item d-empty">No routines yet.</div>`;
+  const activity = `
+    <div class="d-section"><span>Suggested</span></div>
+    <div class="d-card">
+      <button class="d-item d-link" data-prefill="Set up a routine to ">${ICONS.clock}<span>Create a routine</span>${ICONS.chevron}</button>
+      <button class="d-item d-link" data-prefill="Your job: ">${ICONS.job}<span>Give it a job</span>${ICONS.chevron}</button>
+    </div>
+    <div class="d-section"><span>Routines</span></div>
+    <div class="d-card">${routines}</div>
+    <div class="d-section"><span>Computer</span></div>
+    <div class="d-card"><div class="d-item d-computer">
+      <div class="d-text"><div>Bot's computer</div><div class="d-sub">${b.working ? esc(b.status || "Working") : "Asleep"}</div></div>
+      <div class="d-screen ${b.working ? "awake" : ""}">${avatar(b.color, b.shape, 40)}${b.working ? "" : "<i>z</i>"}</div>
+    </div></div>`;
+  const list = harnesses.length ? harnesses : Object.keys(HARNESS_NAMES);
+  const settings = `
+    <div class="d-section"><span>Bot</span></div>
+    <div class="d-card">
+      <label class="d-item"><span class="d-text">Runs on</span>
+        <select id="d-harness">${list.map((h) => `<option value="${h}" ${h === b.harness ? "selected" : ""}>${HARNESS_NAMES[h] || h}</option>`).join("")}</select></label>
+      <div class="d-item"><span class="d-text">Hide from sidebar</span>${toggle(b.hidden, 'id="d-hide"')}</div>
+    </div>
+    ${b.primary ? "" : `<div class="d-card"><button class="d-item d-link d-danger" id="d-delete">${ICONS.trash}<span>Delete Bot</span></button></div>`}`;
+  el.innerHTML = `
+    <button class="d-close" id="d-close" title="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    <div class="d-hero">${avatar(b.color, b.shape, 120)}
+      <input class="d-name" id="d-name" value="${esc(b.name)}" maxlength="60" title="Rename" spellcheck="false" /></div>
+    <div class="d-tabs">
+      <button data-tab="activity" class="${details.tab === "activity" ? "on" : ""}">Activity</button>
+      <button data-tab="settings" class="${details.tab === "settings" ? "on" : ""}">Settings</button>
+    </div>
+    ${details.tab === "activity" ? activity : settings}`;
+}
+
+async function patchBot(body) {
+  try { upsertBot(await api("PATCH", `/api/bots/${activeId}`, body)); render(true); renderDetails(); }
+  catch (err) { alert(err.message); }
+}
+
+$("bot-pill").addEventListener("click", () => (details.open ? closeDetails() : openDetails()));
+$("details").addEventListener("click", async (e) => {
+  const t = e.target.closest("button");
+  if (!t) return;
+  if (t.id === "d-close") return closeDetails();
+  if (t.dataset.tab) { details.tab = t.dataset.tab; return renderDetails(); }
+  if (t.dataset.prefill) { $("input").value = t.dataset.prefill; $("input").focus(); return; }
+  if (t.id === "d-hide") return patchBot({ hidden: !bot(activeId).hidden });
+  if (t.dataset.routine) {
+    const r = details.routines.find((x) => x.id === t.dataset.routine);
+    try { Object.assign(r, await api("PATCH", `/api/routines/${r.id}`, { enabled: !r.enabled })); } catch (err) { alert(err.message); }
+    return renderDetails();
+  }
+  if (t.id === "d-delete") {
+    const b = bot(activeId);
+    if (confirm(`Delete ${b.name}? This erases its chat, memory, and routines. Files on the computer stay.`)) {
+      try { await api("DELETE", `/api/bots/${b.id}`); closeDetails(); } catch (err) { alert(err.message); }
+    }
+  }
 });
+$("details").addEventListener("change", (e) => { if (e.target.id === "d-harness") patchBot({ harness: e.target.value }); });
+$("details").addEventListener("keydown", (e) => { if (e.target.id === "d-name" && e.key === "Enter") e.target.blur(); });
+$("details").addEventListener("focusout", (e) => {
+  if (e.target.id !== "d-name") return;
+  const name = e.target.value.trim();
+  if (name && name !== bot(activeId)?.name) patchBot({ name });
+  else e.target.value = bot(activeId)?.name ?? "";
+});
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && details.open && $("nb").hidden) closeDetails(); });
 
 $("hidden-btn").addEventListener("click", () => { showHidden = !showHidden; renderSidebar(); });
 $("search-btn").addEventListener("click", () => {
