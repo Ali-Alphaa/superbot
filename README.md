@@ -1,8 +1,8 @@
-# Open Grok Bot
+# SuperBot
 
 An open-source, self-hosted alternative to Grok Bot.
 
-> **Working name.** "Grok" is a trademark of xAI. We will rename this project before launch. This project is not affiliated with xAI or X.
+> Not affiliated with xAI or X. "Grok" is a trademark of xAI.
 
 You get a team of AI Bots. Each Bot has a name, a job, memory, and a real computer on your VPS. You message them like teammates. They finish work end to end and ask you only when they need approval.
 

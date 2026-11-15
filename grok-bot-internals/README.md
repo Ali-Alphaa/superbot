@@ -1,6 +1,6 @@
 # Grok Bot internals
 
-How xAI's Grok Bot actually works under the hood. Reference for building Open Grok Bot.
+How xAI's Grok Bot actually works under the hood. Reference for building SuperBot.
 
 Last checked: 2026-11-15.
 
@@ -24,7 +24,7 @@ Each fact is tagged with where it came from:
 
 Where the two disagree, the page says so.
 
-## Key takeaways for Open Grok Bot
+## Key takeaways for SuperBot
 
 - **One VM per user, not per Bot.** Bots are separate personas and chats on a shared machine.
 - **Each Bot gets its own screen.** Parallel computer use. Not a security boundary.
