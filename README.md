@@ -6,6 +6,14 @@ An open-source, self-hosted alternative to Grok Bot.
 
 You get a team of AI Bots. Each Bot has a name, a job, memory, and a real computer on your VPS. You message them like teammates. They finish work end to end and ask you only when they need approval.
 
+## Architecture we're replicating
+
+Our rough guess at how Grok Bot works under the hood: one shared Linux VM per account, and every Bot gets its own little world on it. Based on what a Grok Bot told us about its own VM. Not official.
+
+![How Grok Bot probably works under the hood](docs/images/grok-bot-architecture.png)
+
+Details: [VM specs](docs/background/grok-bot-computer-specs.md) and [running many Bots on one VM](docs/background/shared-vm-architecture.md).
+
 ## Harness agnostic
 
 Bots run on the coding agent you choose:
