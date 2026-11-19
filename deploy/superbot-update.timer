@@ -1,0 +1,12 @@
+# Runs the auto-update job every day at 04:00 server time (set TZ in .env for botd; this timer uses the system time zone).
+# Install alongside superbot-update.service in ~/.config/systemd/user/, then:
+#   systemctl --user daemon-reload && systemctl --user enable --now superbot-update.timer
+[Unit]
+Description=Daily SuperBot upstream sync
+
+[Timer]
+OnCalendar=*-*-* 04:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

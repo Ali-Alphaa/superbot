@@ -31,6 +31,7 @@ static WEB_DIR: OnceLock<Option<PathBuf>> = OnceLock::new();
 
 const COLORS: [&str; 11] = ["#f5f5f5", "#9a6b3f", "#e5484d", "#e8702e", "#e9a23b", "#4cc06a", "#4fb5a5", "#3b82f6", "#8b5cf6", "#e64a9c", "#7a7a7a"];
 const SHAPES: [&str; 12] = ["waddle", "drop", "cloud", "bean", "onigiri", "peanut", "pebble", "square", "jelly", "gem", "gear", "heart"];
+const PERMISSIONS: [&str; 2] = ["full", "restricted"];
 
 fn env(key: &str, default: &str) -> String {
     std::env::var(key).ok().filter(|v| !v.is_empty()).unwrap_or_else(|| default.into())
@@ -304,6 +305,12 @@ fn bot_patch(v: &Value) -> Res<BotPatch> {
         Value::String(_) => return Err(bad("Invalid effort")),
         _ => {}
     }
+    if let Some(m) = v.get("permissions").and_then(Value::as_str) {
+        if !PERMISSIONS.contains(&m) {
+            return Err(bad("Permissions must be full or restricted"));
+        }
+        p.permissions = Some(m.into());
+    }
     if let Some(h) = v.get("harness") {
         let h = h.as_str().filter(|h| adapters::get(h).is_some());
         let h = h.ok_or_else(|| bad(format!("Harness must be one of: {}", adapters::NAMES.join(", "))))?;
@@ -324,6 +331,12 @@ async fn create_bot(State(app): State<AppState>, Json(v): Json<Value>) -> Res<(S
         p.model.flatten().as_deref(),
         false,
     );
+    // New Bots take the server default (DEFAULT_PERMISSIONS), unless the request set one.
+    let default = env("DEFAULT_PERMISSIONS", "restricted");
+    let perm = p.permissions.clone().unwrap_or(if PERMISSIONS.contains(&default.as_str()) { default } else { "restricted".into() });
+    app.db.update_bot(&bot.id, BotPatch { permissions: Some(perm.clone()), ..Default::default() });
+    let mut bot = bot;
+    bot.permissions = perm;
     app.init_bot_files(&bot);
     app.push_bot(&bot.id);
     Ok((StatusCode::CREATED, Json(app.bot_view(&bot))))

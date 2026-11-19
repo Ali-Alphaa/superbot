@@ -36,10 +36,17 @@ pub struct RunInput {
     pub model: Option<String>,
     /// Reasoning effort, in the harness's own words (e.g. "high").
     pub effort: Option<String>,
+    /// "full" skips all permission checks. "restricted" allows only `allowed_tools`.
+    pub permissions: String,
+    /// Tool rules for restricted mode, in the harness's own format.
+    pub allowed_tools: String,
     pub env: HashMap<String, String>,
     /// A private folder for this Bot's harness files.
     pub state_dir: PathBuf,
 }
+
+/// Default tool allowlist for restricted Bots (Claude Code syntax). Override with RESTRICTED_TOOLS.
+pub const RESTRICTED_TOOLS: &str = "Read,Write,Edit,Glob,Grep,Bash(botctl *),Bash(git status*),Bash(git diff*),Bash(git log*),Bash(git add*),Bash(git commit*),Bash(git branch*),Bash(ls*),Bash(cat*),Bash(pwd),Bash(mkdir*),Bash(npm *),Bash(cargo *),Bash(node *)";
 
 pub trait Adapter: Send {
     fn bin(&self) -> &'static str;

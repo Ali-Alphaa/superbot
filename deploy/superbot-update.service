@@ -1,0 +1,12 @@
+# User service for the auto-update job. Install as ~/.config/systemd/user/superbot-update.service
+# Replace <repo-path> with the folder where you cloned your fork. Change UPDATE_MODE to pr to review first.
+[Unit]
+Description=Sync SuperBot fork with upstream, build, and restart botd if it passes
+
+[Service]
+Type=oneshot
+WorkingDirectory=<repo-path>
+Environment=REPO_DIR=<repo-path>
+Environment=UPDATE_MODE=merge
+Environment=SERVICE=botd
+ExecStart=<repo-path>/deploy/auto-update.sh

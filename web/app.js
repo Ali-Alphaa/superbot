@@ -246,7 +246,7 @@ async function renderModelBar() {
   const list = await modelLists[first.harness];
   const b = bot(activeId); // re-read: the Bot may have changed while loading
   if (!b || b.id !== first.id || b.harness !== first.harness) return;
-  const key = [b.id, b.harness, b.model, b.effort, list.length].join("|");
+  const key = [b.id, b.harness, b.model, b.effort, b.permissions, list.length].join("|");
   if (key === modelBarKey) return;
   modelBarKey = key;
 
@@ -261,6 +261,7 @@ async function renderModelBar() {
   $("effort-select").innerHTML = ["", ...current.efforts].map((e) =>
     `<option value="${esc(e)}" ${e === (b.effort || "") ? "selected" : ""}>${e ? cap(e) : "Default effort"}</option>`).join("");
   $("effort-select").hidden = !current.efforts.length;
+  $("perm-select").value = b.permissions || "restricted";
   $("model-bar").hidden = false;
 }
 
@@ -280,6 +281,14 @@ $("model-select").addEventListener("change", async (e) => {
   saveModel({ model: e.target.value || null, effort });
 });
 $("effort-select").addEventListener("change", (e) => saveModel({ effort: e.target.value || null }));
+$("perm-select").addEventListener("change", (e) => {
+  const b = bot(activeId);
+  if (e.target.value === "full" && !confirm("Full access lets this Bot run any command with no checks. Turn it on?")) {
+    e.target.value = b?.permissions || "restricted";
+    return;
+  }
+  saveModel({ permissions: e.target.value });
+});
 
 // Live screen: the Bot's own desktop, streamed by voxl. View only until you take over.
 let screenTimer = null;

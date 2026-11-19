@@ -17,7 +17,14 @@ impl Adapter for Codex {
         if input.session_id.is_some() {
             a.push("resume".into());
         }
-        a.extend(["--json", "--skip-git-repo-check", "--dangerously-bypass-approvals-and-sandbox", "-c"].map(String::from));
+        a.extend(["--json", "--skip-git-repo-check"].map(String::from));
+        if input.permissions == "full" {
+            a.push("--dangerously-bypass-approvals-and-sandbox".into());
+        } else {
+            // Restricted: keep approvals and sandbox on; writes stay in the workspace.
+            a.extend(["--sandbox", "workspace-write"].map(String::from));
+        }
+        a.push("-c".into());
         a.push(format!("developer_instructions={}", Value::String(input.system.clone())));
         if let Some(m) = &input.model {
             a.extend(["-m".into(), m.clone()]);

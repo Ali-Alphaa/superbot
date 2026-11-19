@@ -19,16 +19,23 @@ impl Adapter for Claude {
         self.id = input.session_id.clone().unwrap_or_else(new_uuid);
         let mut a: Vec<String> = [
             "-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages",
-            "--dangerously-skip-permissions", "--append-system-prompt", &input.system,
+            "--append-system-prompt", &input.system,
         ]
         .map(String::from)
         .into();
+        if input.permissions == "full" {
+            a.push("--dangerously-skip-permissions".into());
+        }
         a.extend([if input.session_id.is_some() { "--resume" } else { "--session-id" }.into(), self.id.clone()]);
         if let Some(m) = &input.model {
             a.extend(["--model".into(), m.clone()]);
         }
         if let Some(e) = &input.effort {
             a.extend(["--effort".into(), e.clone()]);
+        }
+        if input.permissions != "full" {
+            // Headless mode denies any tool not listed here, so nothing waits for a prompt.
+            a.extend(["--allowedTools".into(), input.allowed_tools.clone()]);
         }
         a.extend(["--".into(), input.prompt.clone()]);
         a
